@@ -1,12 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "Boopbot Spotify",
+  "name": "QueueIt",
   "version": "1.1.0",
   "description": "Spotify integration — scan any page for songs, add to queue or playlist.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkHN0MelZifIPxYCfXtylPY/7Ow8Aydyby4tRZDAH9oZMGO3oZmE6I/5DMYN1NmxFOuPiFXcwy4Zm8E4NLetuVu+EJnGv8v1Brf2U5HEm9kjQjeaGJFv6nr6h1BeOFsvprHsVZUmEF/r/jSokAXqXISoUGwILSyVvz/xs+2vN6gudtcMbyKQ6Fr2eHhlkxsrT3z2DInqS/wzHQLPtg/cv01pNJhcha75X6eCCwBzYpqzODv0sGgi0YX65ZGYIIIOBJF9kIgdRap+toOODQ6gIyPwHO/fDFTdMvu7nC6/7g33XMUX5vfwfJzjZYsZO4I7mSAXz7Zg297e3GpcwRxrI5QIDAQAB",
-  "permissions": ["identity", "storage", "scripting", "activeTab", "tabs"],
+  "permissions": ["storage", "scripting", "activeTab", "tabs"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none';"
+  },
   "background": { "service_worker": "background.js" },
-  "host_permissions": ["https://api.spotify.com/*", "https://accounts.spotify.com/*", "https://api.anthropic.com/*", "<all_urls>"],
+  "host_permissions": ["https://api.spotify.com/*", "https://accounts.spotify.com/*", "https://api.anthropic.com/*"],
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -14,7 +17,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Boopbot Spotify",
+    "default_title": "QueueIt",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
