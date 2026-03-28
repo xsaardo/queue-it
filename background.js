@@ -46,8 +46,8 @@ async function doRefreshToken() {
     }),
   });
   if (!res.ok) return null;
-  const token = await res.json();
-  if (!token.access_token) return null;
+  const token = await res.json().catch(() => null);
+  if (!token?.access_token) return null;
 
   await chrome.storage.local.set({
     accessToken: token.access_token,
@@ -77,7 +77,7 @@ async function spotifyFetch(path, options = {}) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err?.error?.message || `HTTP ${res.status}`);
   }
-  return res.json();
+  return res.json().catch(() => null);
 }
 
 async function searchTrack(artist, title) {
@@ -90,7 +90,19 @@ async function searchTrack(artist, title) {
 }
 
 async function addToQueue(uri) {
-  return spotifyFetch(`/me/player/queue?uri=${encodeURIComponent(uri)}`, { method: 'POST' });
+  const token = await getToken();
+  if (!token) throw new Error('not_authenticated');
+  const res = await fetch(`https://api.spotify.com/v1/me/player/queue?uri=${encodeURIComponent(uri)}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+  });
+  if (res.status === 401) throw new Error('not_authenticated');
+  if (res.status === 404) throw new Error('No active Spotify device — open Spotify on a device first');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `HTTP ${res.status}`);
+  }
+  // 204 or any other 2xx — success, body not needed
 }
 
 // ─── Processing state (written here, read by popup via storage.onChanged) ─────
@@ -109,7 +121,7 @@ async function processSongs(songs) {
   for (let i = 0; i < songs.length; i++) {
     const song = songs[i];
     const label = song.artist ? `${song.artist} – ${song.title}` : song.title;
-    await setProcessingState({ status: 'running', total, current: i, currentLabel: label, foundCount: found.length, notFound });
+    await setProcessingState({ status: 'running', total, current: i, currentLabel: label, foundCount: found.length, notFoundCount: notFound.length });
 
     try {
       const track = await searchTrack(song.artist, song.title);
@@ -120,7 +132,7 @@ async function processSongs(songs) {
     await new Promise(r => setTimeout(r, 120));
   }
 
-  await setProcessingState({ status: 'running', total, current: total, currentLabel: `Queueing ${found.length} tracks…`, foundCount: found.length, notFound });
+  await setProcessingState({ status: 'running', total, current: total, currentLabel: `Queueing ${found.length} tracks…`, foundCount: found.length, notFoundCount: notFound.length });
 
   for (const f of found) {
     await addToQueue(f.uri);
@@ -141,20 +153,41 @@ async function authenticate() {
   const redirectUri = getRedirectUri();
   const { verifier, challenge } = await generatePKCE();
 
-  const url = new URL('https://accounts.spotify.com/authorize');
-  url.searchParams.set('client_id', CLIENT_ID);
-  url.searchParams.set('response_type', 'code');
-  url.searchParams.set('redirect_uri', redirectUri);
-  url.searchParams.set('scope', 'user-modify-playback-state');
-  url.searchParams.set('code_challenge_method', 'S256');
-  url.searchParams.set('code_challenge', challenge);
-  url.searchParams.set('show_dialog', 'true');
+  const authUrl = new URL('https://accounts.spotify.com/authorize');
+  authUrl.searchParams.set('client_id', CLIENT_ID);
+  authUrl.searchParams.set('response_type', 'code');
+  authUrl.searchParams.set('redirect_uri', redirectUri);
+  authUrl.searchParams.set('scope', 'user-modify-playback-state');
+  authUrl.searchParams.set('code_challenge_method', 'S256');
+  authUrl.searchParams.set('code_challenge', challenge);
+  authUrl.searchParams.set('show_dialog', 'true');
 
   return new Promise((resolve, reject) => {
-    chrome.identity.launchWebAuthFlow({ url: url.toString(), interactive: true }, async responseUrl => {
-      if (chrome.runtime.lastError) { reject(new Error(chrome.runtime.lastError.message)); return; }
+    let authWindowId = null;
+
+    function cleanup() {
+      chrome.tabs.onUpdated.removeListener(onTabUpdated);
+      chrome.windows.onRemoved.removeListener(onWindowRemoved);
+      if (authWindowId !== null) {
+        chrome.windows.remove(authWindowId, () => void chrome.runtime.lastError);
+        authWindowId = null;
+      }
+    }
+
+    function onWindowRemoved(windowId) {
+      if (windowId === authWindowId) {
+        chrome.tabs.onUpdated.removeListener(onTabUpdated);
+        chrome.windows.onRemoved.removeListener(onWindowRemoved);
+        authWindowId = null;
+        reject(new Error('Auth window was closed'));
+      }
+    }
+
+    async function onTabUpdated(tabId, changeInfo) {
+      if (!changeInfo.url?.startsWith(redirectUri)) return;
+      cleanup();
       try {
-        const code = new URL(responseUrl).searchParams.get('code');
+        const code = new URL(changeInfo.url).searchParams.get('code');
         if (!code) throw new Error('No authorization code in response');
 
         const res = await fetch('https://accounts.spotify.com/api/token', {
@@ -178,8 +211,72 @@ async function authenticate() {
         });
         resolve();
       } catch (e) { reject(e); }
+    }
+
+    chrome.tabs.onUpdated.addListener(onTabUpdated);
+    chrome.windows.onRemoved.addListener(onWindowRemoved);
+
+    chrome.windows.create({
+      url: authUrl.toString(),
+      type: 'popup',
+      width: 480,
+      height: 700,
+      focused: true,
+    }, win => {
+      authWindowId = win.id;
     });
   });
+}
+
+// ─── Claude AI extraction ─────────────────────────────────────────────────────
+
+async function extractSongsWithAI(pageText) {
+  const data = await new Promise(resolve => chrome.storage.local.get(['claudeApiKey'], resolve));
+  const apiKey = data.claudeApiKey;
+  if (!apiKey) throw new Error('No Claude API key saved');
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      messages: [{
+        role: 'user',
+        content: `Extract all songs or tracks mentioned in the following webpage text. Return ONLY a JSON array of objects with "artist" and "title" fields. Use empty string for unknown artists. Only include actual songs/tracks, not albums or artist names alone.
+
+Example output: [{"artist":"Radiohead","title":"Creep"},{"artist":"","title":"Bohemian Rhapsody"}]
+
+Webpage text:
+${pageText.slice(0, 12000)}`,
+      }],
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `Claude API error ${res.status}`);
+  }
+
+  const json = await res.json();
+  const text = json.content?.[0]?.text || '';
+  const match = text.match(/\[[\s\S]*\]/);
+  if (!match) return [];
+
+  let songs;
+  try {
+    songs = JSON.parse(match[0]);
+  } catch {
+    return [];
+  }
+  return songs
+    .filter(s => s?.title && typeof s.title === 'string' && s.title.length > 1)
+    .map(s => ({ artist: s.artist || '', title: s.title, confidence: 'high', source: 'ai' }));
 }
 
 // ─── Message listener ─────────────────────────────────────────────────────────
@@ -196,5 +293,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     processSongs(msg.songs)
       .catch(err => setProcessingState({ status: 'error', error: err.message }));
     sendResponse({ ok: true }); // acknowledge immediately; progress via storage
+    return false;
+  }
+
+  if (msg.type === 'AI_SCAN') {
+    extractSongsWithAI(msg.pageText)
+      .then(songs => sendResponse({ ok: true, songs }))
+      .catch(err => sendResponse({ ok: false, error: err.message }));
+    return true;
   }
 });
