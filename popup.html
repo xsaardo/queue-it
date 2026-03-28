@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Boopbot Spotify</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- SETUP SCREEN -->
+  <div id="screen-setup" class="screen hidden">
+    <div class="header">
+      <span class="logo">🎵</span>
+      <span class="title">Boopbot Spotify</span>
+    </div>
+    <div class="section">
+      <p class="label">Before connecting, add this Redirect URI to your <a href="#" id="open-dashboard">Spotify App Dashboard</a>:</p>
+      <div class="copy-box">
+        <span id="redirect-uri-text" class="mono"></span>
+        <button id="copy-uri-btn" class="icon-btn" title="Copy">📋</button>
+      </div>
+      <p class="hint">Dashboard → your app → Edit → Redirect URIs → Add URI → Save</p>
+    </div>
+    <button id="connect-btn" class="btn btn-primary">Connect to Spotify</button>
+    <p id="auth-error" class="error hidden"></p>
+  </div>
+
+  <!-- MAIN SCREEN -->
+  <div id="screen-main" class="screen hidden">
+    <div class="header">
+      <span class="logo">🎵</span>
+      <span class="title">Boopbot Spotify</span>
+      <button id="disconnect-btn" class="icon-btn small" title="Disconnect">✕</button>
+    </div>
+
+    <!-- Scan page -->
+    <div class="section">
+      <div class="section-label">CURRENT PAGE</div>
+      <p class="hint">Extract songs from any page — music reviews, playlists, articles.</p>
+      <div class="btn-row" style="margin-bottom:8px">
+        <button id="scan-btn" class="btn btn-primary">🔍 Scan Page</button>
+        <button id="ai-scan-btn" class="btn btn-secondary">🤖 AI Scan</button>
+      </div>
+      <div id="ai-key-section" class="hidden">
+        <div class="api-key-wrap">
+          <input id="api-key-input" type="password" class="api-key-input" placeholder="Claude API key (sk-ant-…)" />
+          <button id="api-key-save-btn" class="btn-link">Save</button>
+        </div>
+        <p class="hint">Get a key at <a href="#" id="open-api-console">console.anthropic.com</a></p>
+      </div>
+      <p id="ai-key-status" class="hint hidden">AI key saved · <button id="ai-key-clear-btn" class="btn-link">remove</button></p>
+    </div>
+
+  </div>
+
+  <!-- SCAN SCREEN -->
+  <div id="screen-scan" class="screen hidden">
+    <div class="header">
+      <span class="logo">🔍</span>
+      <span class="title" id="scan-heading">Scanning page…</span>
+      <button id="scan-close-btn" class="icon-btn small" title="Back">✕</button>
+    </div>
+
+    <!-- Loading state -->
+    <div id="scan-loading" class="section">
+      <div class="scanning-pulse">Analysing page content…</div>
+    </div>
+
+    <!-- No results state -->
+    <div id="scan-empty" class="section hidden">
+      <p id="scan-empty-msg" class="hint">No songs detected on this page.</p>
+      <p id="scan-empty-hint" class="hint">Try a music review, tracklist, or playlist article.</p>
+    </div>
+
+    <!-- Results state -->
+    <div id="scan-results" class="hidden">
+      <div class="scan-controls">
+        <div class="select-row">
+          <button id="select-all-btn" class="btn-link">Select all</button>
+          <span class="sep">·</span>
+          <button id="deselect-all-btn" class="btn-link">Deselect all</button>
+          <span id="selected-count" class="count-badge">0 selected</span>
+        </div>
+        <div class="confidence-legend">
+          <span class="dot high"></span>high &nbsp;
+          <span class="dot medium"></span>medium &nbsp;
+          <span class="dot low"></span>low confidence
+        </div>
+      </div>
+      <p id="scan-cap-notice" class="hint hidden" style="margin-bottom:6px">Showing first 200 songs found.</p>
+      <div id="candidates-list" class="candidates-list"></div>
+      <div class="btn-row scan-actions">
+        <button id="scan-queue-btn" class="btn btn-primary" disabled>Add to Queue</button>
+      </div>
+      <div class="rescan-row">
+        <button id="rescan-btn" class="btn-link">🔍 Basic rescan</button>
+        <span class="sep">·</span>
+        <button id="ai-rescan-btn" class="btn-link">🤖 AI Rescan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROGRESS SCREEN -->
+  <div id="screen-progress" class="screen hidden">
+    <div class="header">
+      <span class="logo">🎵</span>
+      <span class="title" id="progress-title">Creating playlist…</span>
+    </div>
+    <div class="section">
+      <div class="progress-bar-wrap">
+        <div id="progress-bar" class="progress-bar" style="width:0%"></div>
+      </div>
+      <div id="progress-count" class="progress-count">0 / 0</div>
+      <div id="progress-current" class="hint truncate">Searching…</div>
+    </div>
+  </div>
+
+  <!-- RESULT SCREEN -->
+  <div id="screen-result" class="screen hidden">
+    <div class="header">
+      <span class="logo">✅</span>
+      <span id="result-heading" class="title">Done!</span>
+    </div>
+    <div class="section">
+      <div id="result-summary" class="result-summary"></div>
+      <div id="not-found-section" class="hidden">
+        <div class="section-label" style="margin-top:12px">NOT FOUND ON SPOTIFY</div>
+        <ul id="not-found-list" class="not-found-list"></ul>
+      </div>
+    </div>
+    <button id="back-btn" class="btn btn-ghost">← Back</button>
+  </div>
+
+<script src="extractor.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
