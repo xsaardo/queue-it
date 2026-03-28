@@ -15,7 +15,7 @@
       <span class="title">QueueIt</span>
     </div>
     <div class="section">
-      <p class="hint">Connect your Spotify account to start adding songs to your queue.</p>
+      <p class="hint">Scan any page for song mentions and add them straight to your Spotify queue. Connect your account to get started.</p>
     </div>
     <button id="connect-btn" class="btn btn-primary">Connect to Spotify</button>
     <p id="auth-error" class="error hidden"></p>
@@ -26,34 +26,34 @@
     <div class="header">
       <span class="logo">🎵</span>
       <span class="title">QueueIt</span>
-      <button id="disconnect-btn" class="icon-btn small" title="Disconnect">✕</button>
     </div>
 
     <!-- Scan page -->
     <div class="section">
-      <div class="section-label">CURRENT PAGE</div>
-      <p class="hint">Extract songs from any page — music reviews, playlists, articles.</p>
-      <div class="btn-row" style="margin-bottom:8px">
+      <p class="hint" style="margin-bottom:14px">Extract songs from any page — music reviews, playlists, articles.</p>
+      <div class="btn-row" style="margin-bottom:4px">
         <button id="scan-btn" class="btn btn-primary">🔍 Scan Page</button>
         <button id="ai-scan-btn" class="btn btn-secondary">🤖 AI Scan</button>
       </div>
+      <p class="hint" style="margin-bottom:8px">AI Scan is better for articles and reviews where songs aren't in a structured list.</p>
       <div id="ai-key-section" class="hidden">
         <div class="api-key-wrap">
-          <input id="api-key-input" type="password" class="api-key-input" placeholder="Claude API key (sk-ant-…)" />
+          <input id="api-key-input" type="password" class="api-key-input" placeholder="API key (Claude, OpenAI, Gemini…)" />
           <button id="api-key-save-btn" class="btn-link">Save</button>
         </div>
-        <p class="hint">Get a key at <a href="#" id="open-api-console">console.anthropic.com</a></p>
+        <p id="api-key-error" class="error hidden">Unrecognized key format. Supported: Claude (sk-ant-…), OpenAI (sk-…), Gemini (AIza…), OpenRouter (sk-or-…).</p>
+        <p class="hint">Supports Claude, OpenAI, Gemini, and OpenRouter · uses paid API credits</p>
       </div>
-      <p id="ai-key-status" class="hint hidden">AI key saved · <button id="ai-key-clear-btn" class="btn-link">remove</button></p>
       <div id="ai-consent-banner" class="consent-banner hidden">
-        <p class="consent-text">AI Scan sends up to 12,000 characters of this page's text to Anthropic's API. Avoid using it on pages with sensitive information.</p>
+        <p class="consent-text">AI Scan sends up to 12,000 characters of this page's text to your AI provider's API. Each scan uses a small amount of paid API credits. Avoid using it on pages with sensitive information.</p>
         <div class="consent-actions">
           <button id="ai-consent-ok" class="btn btn-primary btn-sm">Got it</button>
           <button id="ai-consent-cancel" class="btn-link">Cancel</button>
         </div>
       </div>
+      <p id="ai-key-status" class="hint hidden" style="margin-top:8px"><span id="ai-provider-label">AI</span> key saved · <button id="ai-key-clear-btn" class="btn-link">remove</button></p>
     </div>
-
+    <button id="disconnect-btn" class="btn btn-ghost">Disconnect Spotify</button>
   </div>
 
   <!-- SCAN SCREEN -->
@@ -61,7 +61,6 @@
     <div class="header">
       <span class="logo">🔍</span>
       <span class="title" id="scan-heading">Scanning page…</span>
-      <button id="scan-close-btn" class="icon-btn small" title="Back">✕</button>
     </div>
 
     <!-- Loading state -->
@@ -101,6 +100,7 @@
         <button id="ai-rescan-btn" class="btn-link">🤖 AI Rescan</button>
       </div>
     </div>
+    <button id="scan-back-btn" class="btn btn-ghost">← Back</button>
   </div>
 
   <!-- PROGRESS SCREEN -->
