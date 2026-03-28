@@ -116,7 +116,54 @@ function extractSongsFromPage() {
     });
   }
 
-  // ── 7. Last.fm / Setlist.fm ──────────────────────────────────────────────
+  // ── 7. RateYourMusic ─────────────────────────────────────────────────────
+  if (/rateyourmusic\.com/.test(location.hostname)) {
+    // Song list pages: each row has h2.list_song (title) + h3.list_song_artists (artist)
+    // Album list rows use a.list_album instead — the a.song selector naturally skips them
+    document.querySelectorAll('#user_list td.main_entry').forEach(td => {
+      const title  = td.querySelector('h2.list_song a.song .ui_name_locale_original')?.textContent?.trim();
+      const artist = td.querySelector('h3.list_song_artists a.artist .ui_name_locale_original')?.textContent?.trim() || '';
+      if (title) add(artist, title, 'high', 'rym');
+    });
+  }
+
+  // ── 9. Reddit ────────────────────────────────────────────────────────────
+  if (/reddit\.com/.test(location.hostname)) {
+    // Matches: "Artist - Title [Genre] (Year)" enforced by r/listentothis, r/Music etc.
+    // Strips trailing [Genre] and (Year) suffixes before adding.
+    const redditRe = /^(.+?)\s[-–—]\s(.+?)(?:\s*\[[^\]]*\])*(?:\s*\(\d{4}\))?\s*$/;
+
+    function tryRedditTitle(text, src) {
+      const m = text?.match(redditRe);
+      if (!m) return;
+      const artist = m[1].trim();
+      const title  = m[2].trim();
+      // Ignore titles that look like sentences (questions, statements)
+      if (/[?!]$/.test(title) || title.split(' ').length > 12) return;
+      add(artist, title, 'high', src);
+    }
+
+    // Single post page — h1 is the post title
+    const h1 = document.querySelector('h1');
+    if (h1) tryRedditTitle(h1.textContent.trim(), 'reddit-post');
+
+    // New Reddit feed (shreddit custom elements)
+    document.querySelectorAll('[slot="title"], [data-testid="post-title"]').forEach(el => {
+      tryRedditTitle(el.textContent.trim(), 'reddit-feed');
+    });
+
+    // New Reddit feed (older new-Reddit DOM)
+    document.querySelectorAll('a[data-click-id="body"] h3').forEach(el => {
+      tryRedditTitle(el.textContent.trim(), 'reddit-feed');
+    });
+
+    // Old Reddit (old.reddit.com)
+    document.querySelectorAll('p.title > a.title').forEach(el => {
+      tryRedditTitle(el.textContent.trim(), 'reddit-old');
+    });
+  }
+
+  // ── 10. Last.fm / Setlist.fm ─────────────────────────────────────────────
   if (/last\.fm/.test(location.hostname)) {
     document.querySelectorAll('.chartlist-name, .track-scrobble-name').forEach(el => {
       const title = el.textContent.trim();
@@ -125,14 +172,15 @@ function extractSongsFromPage() {
     });
   }
   if (/setlist\.fm/.test(location.hostname)) {
-    document.querySelectorAll('.setlistParts li').forEach(el => {
-      const title = el.querySelector('.song span')?.textContent?.trim();
-      const artist = document.querySelector('.setlistHeadline h1 span[itemprop="name"]')?.textContent?.trim() || '';
+    const artist = document.querySelector('h1 a')?.textContent?.trim() || '';
+    document.querySelectorAll('ol li').forEach(li => {
+      const a = li.querySelector('a[href*="stats/songs"]');
+      const title = a?.textContent?.trim();
       if (title) add(artist, title, 'high', 'setlistfm');
     });
   }
 
-  // ── 8. Apple Music / Spotify Web ────────────────────────────────────────
+  // ── 11. Apple Music / Spotify Web ───────────────────────────────────────
   if (/music\.apple\.com/.test(location.hostname)) {
     document.querySelectorAll('[class*="track-cell"], [class*="song-cell"]').forEach(el => {
       const title = el.querySelector('[class*="title"]')?.textContent?.trim();
@@ -148,14 +196,14 @@ function extractSongsFromPage() {
     });
   }
 
-  // ── 9. Generic: microdata / itemprop ─────────────────────────────────────
+  // ── 12. Generic: microdata / itemprop ────────────────────────────────────
   document.querySelectorAll('[itemtype*="MusicRecording"], [itemtype*="MusicTrack"]').forEach(el => {
     const name = el.querySelector('[itemprop="name"]')?.textContent?.trim();
     const artist = el.querySelector('[itemprop="byArtist"]')?.textContent?.trim() || '';
     if (name) add(artist, name, 'high', 'microdata');
   });
 
-  // ── 10. Generic text pattern matching (fallback) ──────────────────────────
+  // ── 13. Generic text pattern matching (fallback) ─────────────────────────
   const skipSelectors = 'nav, footer, header, aside, [role="navigation"], [role="banner"], script, style, noscript';
   const skipEls = new Set(document.querySelectorAll(skipSelectors));
 
