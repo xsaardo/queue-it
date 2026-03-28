@@ -6,13 +6,13 @@ Tasks to complete before publishing to the Chrome Web Store.
 
 ## Blockers
 
-- [ ] **Fix OAuth / CLIENT_ID for public distribution**
+- [x] **Fix OAuth / CLIENT_ID for public distribution**
   Lock the extension ID by generating a private key + packaging a CRX, uploading to the store to get a stable permanent ID. Register that fixed `https://FIXED_ID.chromiumapp.org/` redirect URI in the Spotify app dashboard. Remove hardcoded `CLIENT_ID` from `popup.js` or accept that one developer-owned Spotify app serves all users (valid if the extension ID is locked).
 
 - [x] **Add extension icons**
   Create 16×16, 48×48, 128×128 PNG icons and register them in `manifest.json` under `"icons"` and `"action.default_icon"`. Required for store submission.
 
-- [ ] **Fix setup UX — remove requirement for Spotify Developer account**
+- [x] **Fix setup UX — remove requirement for Spotify Developer account**
   With a locked extension ID and one centralized Spotify app (#1), users should just click "Connect to Spotify" with no redirect URI setup. Remove or replace the current setup screen instructions.
 
 - [x] **Move `processSongs` to background.js**
@@ -28,7 +28,7 @@ Tasks to complete before publishing to the Chrome Web Store.
 - [x] **Implement Spotify token refresh**
   The current PKCE flow has no refresh token handling — users must re-authenticate every hour. Store the refresh token and use Spotify's token refresh endpoint in `background.js` when the access token is expired.
 
-- [ ] **Add store description justification for `<all_urls>` permission**
+- [x] **Add store description justification for `<all_urls>` permission**
   Required for arbitrary page scanning. Add a clear explanation in the store listing: what data is read, what is sent where, and why the broad permission is needed.
 
 - [x] **Reset `scan-empty-msg` on regular scan**
@@ -41,7 +41,7 @@ Tasks to complete before publishing to the Chrome Web Store.
 
 ## Polish
 
-- [ ] **Choose a real product name**
+- [x] **Choose a real product name**
   "Boopbot Spotify" is an internal codename. Update `manifest.json` `name`, `popup.html` `<title>`, and the store listing before submitting.
 
 - [x] **Reduce regex extractor false positives**
