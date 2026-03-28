@@ -271,13 +271,26 @@ async function authenticate() {
   });
 }
 
-// ─── Claude AI extraction ─────────────────────────────────────────────────────
+// ─── AI Provider config ────────────────────────────────────────────────────────
 
-async function extractSongsWithAI(pageText) {
-  const data = await new Promise(resolve => chrome.storage.local.get(['claudeApiKey'], resolve));
-  const apiKey = data.claudeApiKey;
-  if (!apiKey) throw new Error('No Claude API key saved');
+const AI_PROVIDERS = {
+  anthropic:  { name: 'Claude',      model: 'claude-haiku-4-5-20251001',                    baseUrl: 'https://api.anthropic.com' },
+  openai:     { name: 'OpenAI',      model: 'gpt-4o-mini',                                  baseUrl: 'https://api.openai.com' },
+  openrouter: { name: 'OpenRouter',  model: 'meta-llama/llama-3.1-8b-instruct:free',        baseUrl: 'https://openrouter.ai/api' },
+  gemini:     { name: 'Gemini',      model: 'gemini-2.0-flash',                             baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai' },
+};
 
+function detectProvider(key) {
+  if (key.startsWith('sk-ant-')) return 'anthropic';
+  if (key.startsWith('sk-or-')) return 'openrouter';
+  if (key.startsWith('AIza')) return 'gemini';
+  if (key.startsWith('sk-')) return 'openai';
+  return null;
+}
+
+// ─── AI extraction ────────────────────────────────────────────────────────────
+
+async function callAnthropic(apiKey, model, prompt) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -286,37 +299,56 @@ async function extractSongsWithAI(pageText) {
       'content-type': 'application/json',
       'anthropic-dangerous-direct-browser-access': 'true',
     },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
-      messages: [{
-        role: 'user',
-        content: `Extract all songs or tracks mentioned in the following webpage text. Return ONLY a JSON array of objects with "artist" and "title" fields. Use empty string for unknown artists. Only include actual songs/tracks, not albums or artist names alone.
+    body: JSON.stringify({ model, max_tokens: 1024, messages: [{ role: 'user', content: prompt }] }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `API error ${res.status}`);
+  }
+  const json = await res.json();
+  return json.content?.[0]?.text || '';
+}
+
+async function callOpenAICompat(apiKey, model, baseUrl, prompt) {
+  const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ model, max_tokens: 1024, messages: [{ role: 'user', content: prompt }] }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `API error ${res.status}`);
+  }
+  const json = await res.json();
+  return json.choices?.[0]?.message?.content || '';
+}
+
+async function extractSongsWithAI(pageText) {
+  const data = await new Promise(resolve => chrome.storage.local.get(['aiApiKey'], resolve));
+  const apiKey = data.aiApiKey;
+  if (!apiKey) throw new Error('No API key saved');
+
+  const provider = detectProvider(apiKey);
+  if (!provider) throw new Error('Unrecognized API key format');
+  const cfg = AI_PROVIDERS[provider];
+
+  const prompt = `Extract all songs or tracks mentioned in the following webpage text. Return ONLY a JSON array of objects with "artist" and "title" fields. Use empty string for unknown artists. Only include actual songs/tracks, not albums or artist names alone.
 
 Example output: [{"artist":"Radiohead","title":"Creep"},{"artist":"","title":"Bohemian Rhapsody"}]
 
 Webpage text:
-${pageText.slice(0, 12000)}`,
-      }],
-    }),
-  });
+${pageText.slice(0, 12000)}`;
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `Claude API error ${res.status}`);
-  }
+  const text = provider === 'anthropic'
+    ? await callAnthropic(apiKey, cfg.model, prompt)
+    : await callOpenAICompat(apiKey, cfg.model, cfg.baseUrl, prompt);
 
-  const json = await res.json();
-  const text = json.content?.[0]?.text || '';
   const match = text.match(/\[[\s\S]*\]/);
   if (!match) return [];
 
   let songs;
-  try {
-    songs = JSON.parse(match[0]);
-  } catch {
-    return [];
-  }
+  try { songs = JSON.parse(match[0]); } catch { return []; }
+
   return songs
     .filter(s => s?.title && typeof s.title === 'string' && s.title.length > 1)
     .map(s => ({ artist: s.artist || '', title: s.title, confidence: 'high', source: 'ai' }));

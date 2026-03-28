@@ -40,9 +40,26 @@ async function authenticate() {
   });
 }
 
-// ─── Claude API ───────────────────────────────────────────────────────────────
+// ─── AI Provider config ────────────────────────────────────────────────────────
+
+const AI_PROVIDERS = {
+  anthropic:  { name: 'Claude' },
+  openai:     { name: 'OpenAI' },
+  openrouter: { name: 'OpenRouter' },
+  gemini:     { name: 'Gemini' },
+};
+
+function detectProvider(key) {
+  if (key.startsWith('sk-ant-')) return 'anthropic';
+  if (key.startsWith('sk-or-')) return 'openrouter';
+  if (key.startsWith('AIza')) return 'gemini';
+  if (key.startsWith('sk-')) return 'openai';
+  return null;
+}
+
+// ─── AI key storage ───────────────────────────────────────────────────────────
 async function getApiKey() {
-  return new Promise(resolve => chrome.storage.local.get(['claudeApiKey'], d => resolve(d.claudeApiKey || null)));
+  return new Promise(resolve => chrome.storage.local.get(['aiApiKey'], d => resolve(d.aiApiKey || null)));
 }
 
 async function hasAiConsent() {
@@ -54,11 +71,11 @@ async function saveAiConsent() {
 }
 
 async function saveApiKey(key) {
-  return new Promise(resolve => chrome.storage.local.set({ claudeApiKey: key }, resolve));
+  return new Promise(resolve => chrome.storage.local.set({ aiApiKey: key }, resolve));
 }
 
 async function clearApiKey() {
-  return new Promise(resolve => chrome.storage.local.remove(['claudeApiKey'], resolve));
+  return new Promise(resolve => chrome.storage.local.remove(['aiApiKey'], resolve));
 }
 
 async function aiScanViaBackground(pageText) {
@@ -115,12 +132,14 @@ async function scanPage() {
 
 async function aiScanPage() {
   if (!(await hasAiConsent())) {
+    showMain();
     show('ai-consent-banner');
     return;
   }
 
   const apiKey = await getApiKey();
   if (!apiKey) {
+    showMain();
     show('ai-key-section');
     $('api-key-input').focus();
     return;
@@ -300,21 +319,25 @@ async function init() {
 
   // AI Scan
   $('ai-scan-btn').addEventListener('click', () => aiScanPage().catch(handleError));
-  $('open-api-console').addEventListener('click', e => {
-    e.preventDefault();
-    chrome.tabs.create({ url: 'https://console.anthropic.com/settings/keys' });
-  });
   $('api-key-save-btn').addEventListener('click', async () => {
     const key = $('api-key-input').value.trim();
     if (!key) return;
+    const provider = detectProvider(key);
+    if (!provider) {
+      show('api-key-error');
+      return;
+    }
+    hide('api-key-error');
     await saveApiKey(key);
     $('api-key-input').value = '';
     hide('ai-key-section');
+    $('ai-provider-label').textContent = AI_PROVIDERS[provider].name;
     show('ai-key-status');
     aiScanPage().catch(handleError);
   });
   $('api-key-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') $('api-key-save-btn').click();
+    else hide('api-key-error');
   });
   $('ai-key-clear-btn').addEventListener('click', async () => {
     await clearApiKey();
@@ -326,10 +349,16 @@ async function init() {
     aiScanPage().catch(handleError);
   });
   $('ai-consent-cancel').addEventListener('click', () => hide('ai-consent-banner'));
-  getApiKey().then(key => { if (key) show('ai-key-status'); });
+  getApiKey().then(key => {
+    if (key) {
+      const provider = detectProvider(key);
+      $('ai-provider-label').textContent = provider ? AI_PROVIDERS[provider].name : 'AI';
+      show('ai-key-status');
+    }
+  });
 
   // Scan screen
-  $('scan-close-btn').addEventListener('click', () => { clearScanState(); showMain(); });
+  $('scan-back-btn').addEventListener('click', () => { clearScanState(); showMain(); });
   $('select-all-btn').addEventListener('click', () => {
     selectedIndices = new Set(scanCandidates.map((_, i) => i));
     $('candidates-list').querySelectorAll('input[type=checkbox]').forEach(cb => (cb.checked = true));
