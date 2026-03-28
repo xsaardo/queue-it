@@ -1,8 +1,5 @@
 'use strict';
 
-// ─── Config ─────────────────────────────────────────────────────────────────
-const CLIENT_ID = 'dce75b7955954dfba134ab8cc3e98cb3';
-
 // ─── State ───────────────────────────────────────────────────────────────────
 let scanCandidates = [];
 let selectedIndices = new Set();
@@ -48,6 +45,14 @@ async function getApiKey() {
   return new Promise(resolve => chrome.storage.local.get(['claudeApiKey'], d => resolve(d.claudeApiKey || null)));
 }
 
+async function hasAiConsent() {
+  return new Promise(resolve => chrome.storage.local.get(['aiScanConsented'], d => resolve(!!d.aiScanConsented)));
+}
+
+async function saveAiConsent() {
+  return new Promise(resolve => chrome.storage.local.set({ aiScanConsented: true }, resolve));
+}
+
 async function saveApiKey(key) {
   return new Promise(resolve => chrome.storage.local.set({ claudeApiKey: key }, resolve));
 }
@@ -56,44 +61,14 @@ async function clearApiKey() {
   return new Promise(resolve => chrome.storage.local.remove(['claudeApiKey'], resolve));
 }
 
-async function extractSongsWithAI(pageText, apiKey) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
-      messages: [{
-        role: 'user',
-        content: `Extract all songs or tracks mentioned in the following webpage text. Return ONLY a JSON array of objects with "artist" and "title" fields. Use empty string for unknown artists. Only include actual songs/tracks, not albums or artist names alone.
-
-Example output: [{"artist":"Radiohead","title":"Creep"},{"artist":"","title":"Bohemian Rhapsody"}]
-
-Webpage text:
-${pageText.slice(0, 12000)}`,
-      }],
-    }),
+async function aiScanViaBackground(pageText) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ type: 'AI_SCAN', pageText }, response => {
+      if (chrome.runtime.lastError) { reject(new Error(chrome.runtime.lastError.message)); return; }
+      if (response?.ok) resolve(response.songs);
+      else reject(new Error(response?.error || 'AI scan failed'));
+    });
   });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `Claude API error ${res.status}`);
-  }
-
-  const data = await res.json();
-  const text = data.content?.[0]?.text || '';
-  const match = text.match(/\[[\s\S]*\]/);
-  if (!match) return [];
-
-  const songs = JSON.parse(match[0]);
-  return songs
-    .filter(s => s?.title && typeof s.title === 'string' && s.title.length > 1)
-    .map(s => ({ artist: s.artist || '', title: s.title, confidence: 'high', source: 'ai' }));
 }
 
 // ─── Scan state persistence ───────────────────────────────────────────────────
@@ -139,6 +114,11 @@ async function scanPage() {
 }
 
 async function aiScanPage() {
+  if (!(await hasAiConsent())) {
+    show('ai-consent-banner');
+    return;
+  }
+
   const apiKey = await getApiKey();
   if (!apiKey) {
     show('ai-key-section');
@@ -162,7 +142,7 @@ async function aiScanPage() {
       func: getPageTextForAI,
     });
     const pageText = result?.result || '';
-    candidates = await extractSongsWithAI(pageText, apiKey);
+    candidates = await aiScanViaBackground(pageText);
   } catch (err) {
     console.error('AI scan error:', err);
     hide('scan-loading');
@@ -299,17 +279,6 @@ function handleError(err) {
 // ─── Init ─────────────────────────────────────────────────────────────────────
 async function init() {
   // Setup screen
-  const redirectUri = `https://${chrome.runtime.id}.chromiumapp.org/`;
-  $('redirect-uri-text').textContent = redirectUri;
-  $('copy-uri-btn').addEventListener('click', () => {
-    navigator.clipboard.writeText(redirectUri);
-    $('copy-uri-btn').textContent = '✅';
-    setTimeout(() => ($('copy-uri-btn').textContent = '📋'), 1500);
-  });
-  $('open-dashboard').addEventListener('click', e => {
-    e.preventDefault();
-    chrome.tabs.create({ url: 'https://developer.spotify.com/dashboard' });
-  });
   $('connect-btn').addEventListener('click', async () => {
     $('connect-btn').disabled = true;
     $('connect-btn').textContent = 'Connecting…';
@@ -319,7 +288,7 @@ async function init() {
       showMain();
     } catch (err) {
       show('auth-error');
-      $('auth-error').textContent = err.message || 'Auth failed — did you add the redirect URI?';
+      $('auth-error').textContent = err.message || 'Authentication failed. Please try again.';
       $('connect-btn').disabled = false;
       $('connect-btn').textContent = 'Connect to Spotify';
     }
@@ -351,6 +320,12 @@ async function init() {
     await clearApiKey();
     hide('ai-key-status');
   });
+  $('ai-consent-ok').addEventListener('click', async () => {
+    await saveAiConsent();
+    hide('ai-consent-banner');
+    aiScanPage().catch(handleError);
+  });
+  $('ai-consent-cancel').addEventListener('click', () => hide('ai-consent-banner'));
   getApiKey().then(key => { if (key) show('ai-key-status'); });
 
   // Scan screen
