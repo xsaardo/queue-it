@@ -80,6 +80,49 @@ async function spotifyFetch(path, options = {}) {
   return res.json().catch(() => null);
 }
 
+function normalizeStr(str) {
+  return str
+    .toLowerCase()
+    .replace(/\s*[\(\[].*?[\)\]]\s*/g, ' ')  // strip (feat. X), [Remix], etc.
+    .replace(/\bfeat\.?\s.*/i, '')            // strip "feat ..." not caught above
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function wordsOverlap(a, b) {
+  const wa = a.split(' ').filter(w => w.length > 1);
+  const wb = new Set(b.split(' ').filter(w => w.length > 1));
+  if (!wa.length || !wb.size) return true;
+  const shared = wa.filter(w => wb.has(w)).length;
+  return shared / Math.min(wa.length, wb.size) >= 0.5;
+}
+
+const SPOKEN_WORD_RE = /\b(audiobook|unabridged|abridged|narrated by|narrator|chapter \d|podcast|episode \d)\b/i;
+
+function isSpokenWord(track) {
+  if (track.type && track.type !== 'track') return true;
+  const albumType = track.album?.album_type;
+  if (albumType && albumType !== 'album' && albumType !== 'single' && albumType !== 'compilation') return true;
+  const haystack = [track.name, track.album?.name, ...(track.artists?.map(a => a.name) || [])].join(' ');
+  return SPOKEN_WORD_RE.test(haystack);
+}
+
+function isGoodMatch(song, track) {
+  if (isSpokenWord(track)) return false;
+
+  const reqTitle = normalizeStr(song.title);
+  const spotifyTitle = normalizeStr(track.name);
+  if (!wordsOverlap(reqTitle, spotifyTitle)) return false;
+
+  if (song.artist) {
+    const reqArtist = normalizeStr(song.artist);
+    const spotifyArtist = normalizeStr(track.artists.map(a => a.name).join(' '));
+    if (!wordsOverlap(reqArtist, spotifyArtist)) return false;
+  }
+  return true;
+}
+
 async function searchTrack(artist, title) {
   const strict = encodeURIComponent(`artist:${artist} track:${title}`);
   const d1 = await spotifyFetch(`/search?q=${strict}&type=track&limit=1`);
@@ -125,7 +168,7 @@ async function processSongs(songs) {
 
     try {
       const track = await searchTrack(song.artist, song.title);
-      if (track) found.push({ song, uri: track.uri });
+      if (track && isGoodMatch(song, track)) found.push({ song, uri: track.uri });
       else notFound.push(song);
     } catch { notFound.push(song); }
 
