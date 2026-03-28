@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Boopbot Spotify</title>
+  <title>QueueIt</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -12,15 +12,10 @@
   <div id="screen-setup" class="screen hidden">
     <div class="header">
       <span class="logo">🎵</span>
-      <span class="title">Boopbot Spotify</span>
+      <span class="title">QueueIt</span>
     </div>
     <div class="section">
-      <p class="label">Before connecting, add this Redirect URI to your <a href="#" id="open-dashboard">Spotify App Dashboard</a>:</p>
-      <div class="copy-box">
-        <span id="redirect-uri-text" class="mono"></span>
-        <button id="copy-uri-btn" class="icon-btn" title="Copy">📋</button>
-      </div>
-      <p class="hint">Dashboard → your app → Edit → Redirect URIs → Add URI → Save</p>
+      <p class="hint">Connect your Spotify account to start adding songs to your queue.</p>
     </div>
     <button id="connect-btn" class="btn btn-primary">Connect to Spotify</button>
     <p id="auth-error" class="error hidden"></p>
@@ -30,7 +25,7 @@
   <div id="screen-main" class="screen hidden">
     <div class="header">
       <span class="logo">🎵</span>
-      <span class="title">Boopbot Spotify</span>
+      <span class="title">QueueIt</span>
       <button id="disconnect-btn" class="icon-btn small" title="Disconnect">✕</button>
     </div>
 
@@ -50,6 +45,13 @@
         <p class="hint">Get a key at <a href="#" id="open-api-console">console.anthropic.com</a></p>
       </div>
       <p id="ai-key-status" class="hint hidden">AI key saved · <button id="ai-key-clear-btn" class="btn-link">remove</button></p>
+      <div id="ai-consent-banner" class="consent-banner hidden">
+        <p class="consent-text">AI Scan sends up to 12,000 characters of this page's text to Anthropic's API. Avoid using it on pages with sensitive information.</p>
+        <div class="consent-actions">
+          <button id="ai-consent-ok" class="btn btn-primary btn-sm">Got it</button>
+          <button id="ai-consent-cancel" class="btn-link">Cancel</button>
+        </div>
+      </div>
     </div>
 
   </div>
@@ -63,7 +65,7 @@
     </div>
 
     <!-- Loading state -->
-    <div id="scan-loading" class="section">
+    <div id="scan-loading" class="section hidden">
       <div class="scanning-pulse">Analysing page content…</div>
     </div>
 
