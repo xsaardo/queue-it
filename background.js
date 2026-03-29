@@ -313,7 +313,7 @@ const AI_PROVIDERS = {
   anthropic:  { name: 'Claude',      model: 'claude-haiku-4-5-20251001',                    baseUrl: 'https://api.anthropic.com' },
   openai:     { name: 'OpenAI',      model: 'gpt-4o-mini',                                  baseUrl: 'https://api.openai.com' },
   openrouter: { name: 'OpenRouter',  model: 'meta-llama/llama-3.1-8b-instruct:free',        baseUrl: 'https://openrouter.ai/api' },
-  gemini:     { name: 'Gemini',      model: 'gemini-2.0-flash',                             baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai' },
+  gemini:     { name: 'Gemini',      model: 'gemini-2.0-flash',                             baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', chatPath: '/chat/completions' },
 };
 
 function detectProvider(key) {
@@ -345,8 +345,8 @@ async function callAnthropic(apiKey, model, prompt) {
   return json.content?.[0]?.text || '';
 }
 
-async function callOpenAICompat(apiKey, model, baseUrl, prompt) {
-  const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+async function callOpenAICompat(apiKey, model, baseUrl, prompt, chatPath = '/v1/chat/completions') {
+  const res = await fetch(`${baseUrl}${chatPath}`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({ model, max_tokens: 1024, messages: [{ role: 'user', content: prompt }] }),
@@ -377,7 +377,7 @@ ${pageText.slice(0, 12000)}`;
 
   const text = provider === 'anthropic'
     ? await callAnthropic(apiKey, cfg.model, prompt)
-    : await callOpenAICompat(apiKey, cfg.model, cfg.baseUrl, prompt);
+    : await callOpenAICompat(apiKey, cfg.model, cfg.baseUrl, prompt, cfg.chatPath);
 
   const match = text.match(/\[[\s\S]*\]/);
   if (!match) return [];
