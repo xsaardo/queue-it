@@ -141,6 +141,7 @@ async function aiScanPage() {
   if (!apiKey) {
     showMain();
     show('ai-key-section');
+    show('ai-key-prompt');
     $('api-key-input').focus();
     return;
   }
@@ -328,6 +329,7 @@ async function init() {
       return;
     }
     hide('api-key-error');
+    hide('ai-key-prompt');
     await saveApiKey(key);
     $('api-key-input').value = '';
     hide('ai-key-section');
