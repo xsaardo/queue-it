@@ -398,6 +398,39 @@ const SAFE_PROCESSING_ERRORS = new Set([
   'No active Spotify device — open Spotify on a device first',
 ]);
 
+// ─── Context menu ─────────────────────────────────────────────────────────────
+
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: 'ai-scan-selection',
+    title: 'AI Scan with QueueIt',
+    contexts: ['selection'],
+  });
+});
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId !== 'ai-scan-selection') return;
+
+  // Inject to get full selection (info.selectionText is truncated by Chrome)
+  let selectionText = '';
+  try {
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => window.getSelection().toString().trim().slice(0, 15000),
+    });
+    selectionText = result?.result || info.selectionText || '';
+  } catch {
+    selectionText = info.selectionText || '';
+  }
+
+  if (!selectionText) return;
+
+  await chrome.storage.session.set({ pendingAiScan: { selectionText } });
+
+  // Open popup (Chrome 127+; graceful no-op on older builds)
+  try { await chrome.action.openPopup(); } catch { /* user can open manually */ }
+});
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'AUTHENTICATE') {
     authenticate()
