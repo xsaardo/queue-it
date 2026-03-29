@@ -263,3 +263,13 @@ function getPageTextForAI() {
   const text = (clone.innerText || clone.textContent || '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
   return text.slice(0, 15000);
 }
+
+/**
+ * getSelectedTextForAI()
+ *
+ * Self-contained function injected via chrome.scripting.executeScript.
+ * Returns the current text selection for sending to an LLM.
+ */
+function getSelectedTextForAI() {
+  return window.getSelection().toString().trim().slice(0, 15000);
+}

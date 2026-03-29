@@ -137,22 +137,7 @@ async function scanPage() {
   showScanResults(candidates);
 }
 
-async function aiScanPage() {
-  if (!(await hasAiConsent())) {
-    showMain();
-    show('ai-consent-banner');
-    return;
-  }
-
-  const apiKey = await getApiKey();
-  if (!apiKey) {
-    showMain();
-    show('ai-key-section');
-    show('ai-key-prompt');
-    $('api-key-input').focus();
-    return;
-  }
-
+async function doAiScan(textOverride = null) {
   lastResultContext = 'scan';
   showScreen('scan');
   $('scan-heading').textContent = 'AI scanning…';
@@ -163,12 +148,15 @@ async function aiScanPage() {
 
   let candidates = [];
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const [result] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: getPageTextForAI,
-    });
-    const pageText = result?.result || '';
+    let pageText = textOverride;
+    if (!pageText) {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const [result] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: getPageTextForAI,
+      });
+      pageText = result?.result || '';
+    }
     candidates = await aiScanViaBackground(pageText);
   } catch (err) {
     console.error('AI scan error:', err);
@@ -183,6 +171,27 @@ async function aiScanPage() {
   hide('scan-loading');
   show('scan-empty-hint');
   showScanResults(candidates);
+}
+
+async function aiScanPage(textOverride = null) {
+  if (!(await hasAiConsent())) {
+    showMain();
+    if (textOverride) $('ai-consent-banner').dataset.textOverride = textOverride;
+    show('ai-consent-banner');
+    return;
+  }
+
+  const apiKey = await getApiKey();
+  if (!apiKey) {
+    showMain();
+    if (textOverride) $('ai-key-section').dataset.textOverride = textOverride;
+    show('ai-key-section');
+    show('ai-key-prompt');
+    $('api-key-input').focus();
+    return;
+  }
+
+  doAiScan(textOverride).catch(handleError);
 }
 
 function showScanResults(candidates) {
@@ -345,7 +354,9 @@ async function init() {
     hide('ai-key-section');
     $('ai-provider-label').textContent = AI_PROVIDERS[provider].name;
     show('ai-key-status');
-    aiScanPage().catch(handleError);
+    const textOverride = $('ai-key-section').dataset.textOverride || null;
+    delete $('ai-key-section').dataset.textOverride;
+    aiScanPage(textOverride).catch(handleError);
   });
   $('api-key-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') $('api-key-save-btn').click();
@@ -357,17 +368,12 @@ async function init() {
   });
   $('ai-consent-ok').addEventListener('click', async () => {
     await saveAiConsent();
+    const textOverride = $('ai-consent-banner').dataset.textOverride || null;
+    delete $('ai-consent-banner').dataset.textOverride;
     hide('ai-consent-banner');
-    aiScanPage().catch(handleError);
+    aiScanPage(textOverride).catch(handleError);
   });
   $('ai-consent-cancel').addEventListener('click', () => hide('ai-consent-banner'));
-  getApiKey().then(key => {
-    if (key) {
-      const provider = detectProvider(key);
-      $('ai-provider-label').textContent = provider ? AI_PROVIDERS[provider].name : 'AI';
-      show('ai-key-status');
-    }
-  });
 
   // Scan screen
   $('scan-back-btn').addEventListener('click', () => { clearScanState(); showMain(); });
@@ -407,12 +413,29 @@ async function init() {
     if (area === 'local' && changes.processingState) {
       applyProcessingState(changes.processingState.newValue);
     }
+    // Pick up context-menu selection scans while popup is already open
+    if (area === 'session' && changes.pendingAiScan?.newValue) {
+      const { selectionText } = changes.pendingAiScan.newValue;
+      chrome.storage.session.remove('pendingAiScan');
+      if (selectionText) aiScanPage(selectionText).catch(handleError);
+    }
   });
 
   // Boot — check for in-progress or completed job from a previous popup open
   const stored = await new Promise(resolve =>
     chrome.storage.local.get(['accessToken', 'processingState', 'scanState'], resolve)
   );
+  const sessionData = await new Promise(resolve =>
+    chrome.storage.session.get(['aiApiKey', 'pendingAiScan'], resolve)
+  );
+  const pendingAiScan = sessionData.pendingAiScan || null;
+  if (pendingAiScan) chrome.storage.session.remove('pendingAiScan');
+  const existingKey = sessionData.aiApiKey || null;
+  if (existingKey) {
+    const provider = detectProvider(existingKey);
+    $('ai-provider-label').textContent = provider ? AI_PROVIDERS[provider].name : 'AI';
+    show('ai-key-status');
+  }
 
   if (stored.processingState?.status === 'running') {
     // Treat as stale if started more than 10 minutes ago (service worker was killed) (#21)
@@ -426,6 +449,10 @@ async function init() {
     }
   } else if (stored.processingState?.status === 'done') {
     applyProcessingState(stored.processingState);
+  } else if (pendingAiScan?.selectionText && stored.accessToken) {
+    // Context menu selection scan — takes priority over saved scan state
+    showMain();
+    aiScanPage(pendingAiScan.selectionText).catch(handleError);
   } else if (stored.scanState?.candidates?.length > 0) {
     scanCandidates = stored.scanState.candidates;
     // Bounds-check restored indices to prevent out-of-bounds access (#24)
