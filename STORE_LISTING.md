@@ -22,14 +22,14 @@ Songs are searched on Spotify and queued instantly on your active device.
 
 **AI Scan (optional)**
 
-If you provide a Claude API key (Anthropic), QueueIt can use AI to detect songs that the standard text extractor misses — useful for pages with unconventional formatting.
+For pages with unconventional formatting, QueueIt can use AI to detect songs that the standard extractor misses. Supported providers: Claude (Anthropic), OpenAI, Google Gemini, and OpenRouter. Bring your own API key — it's stored in session storage and cleared when the extension closes.
 
 **Privacy**
 
 - QueueIt reads the visible text of the current page to find song mentions. No page content is stored or transmitted except as described below.
 - Spotify OAuth tokens are stored locally in `chrome.storage.local` and sent only to `api.spotify.com` to queue tracks and search for songs.
-- If you use AI Scan, the page's visible text is sent to `api.anthropic.com`. Your Claude API key is stored locally in `chrome.storage.local` and never shared.
-- No analytics, no tracking, no third-party services beyond Spotify and optionally Anthropic.
+- If you use AI Scan, the page's visible text is sent to your chosen AI provider. Your API key is stored in `chrome.storage.session` and cleared when the extension closes.
+- No analytics, no tracking, no third-party services beyond Spotify and your chosen AI provider (if used).
 
 ---
 
@@ -44,7 +44,7 @@ If you provide a Claude API key (Anthropic), QueueIt can use AI to detect songs 
 
 **What is read:** visible text nodes from the current page's DOM (equivalent to selecting all text on the page).
 
-**What is done with it:** song and artist names are parsed locally from the text. If the user initiates an AI Scan, the extracted text is sent to `api.anthropic.com`. No page content is sent to Spotify — only the song title and artist name are used as a search query.
+**What is done with it:** song and artist names are parsed locally from the text. If the user initiates an AI Scan, the extracted text is sent to their chosen AI provider (Anthropic, OpenAI, Google Gemini, or OpenRouter). No page content is sent to Spotify — only the song title and artist name are used as a search query.
 
 **What is not done:** QueueIt does not read pages the user hasn't explicitly triggered a scan on, runs no background content scripts, and does not transmit page content to any server other than Anthropic (and only when AI Scan is used).
 
