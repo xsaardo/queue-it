@@ -59,7 +59,7 @@ function detectProvider(key) {
 
 // ─── AI key storage ───────────────────────────────────────────────────────────
 async function getApiKey() {
-  return new Promise(resolve => chrome.storage.local.get(['aiApiKey'], d => resolve(d.aiApiKey || null)));
+  return new Promise(resolve => chrome.storage.session.get(['aiApiKey'], d => resolve(d.aiApiKey || null)));
 }
 
 async function hasAiConsent() {
@@ -71,11 +71,11 @@ async function saveAiConsent() {
 }
 
 async function saveApiKey(key) {
-  return new Promise(resolve => chrome.storage.local.set({ aiApiKey: key }, resolve));
+  return new Promise(resolve => chrome.storage.session.set({ aiApiKey: key }, resolve));
 }
 
 async function clearApiKey() {
-  return new Promise(resolve => chrome.storage.local.remove(['aiApiKey'], resolve));
+  return new Promise(resolve => chrome.storage.session.remove(['aiApiKey'], resolve));
 }
 
 async function aiScanViaBackground(pageText) {
