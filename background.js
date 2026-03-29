@@ -312,7 +312,7 @@ async function authenticate() {
 const AI_PROVIDERS = {
   anthropic:  { name: 'Claude',      model: 'claude-haiku-4-5-20251001',                    baseUrl: 'https://api.anthropic.com' },
   openai:     { name: 'OpenAI',      model: 'gpt-4o-mini',                                  baseUrl: 'https://api.openai.com' },
-  openrouter: { name: 'OpenRouter',  model: 'meta-llama/llama-3.1-8b-instruct:free',        baseUrl: 'https://openrouter.ai/api' },
+  openrouter: { name: 'OpenRouter',  model: 'openrouter/free',                               baseUrl: 'https://openrouter.ai/api' },
   gemini:     { name: 'Gemini',      model: 'gemini-2.5-flash',                             baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', chatPath: '/chat/completions' },
 };
 
