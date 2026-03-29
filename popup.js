@@ -27,7 +27,7 @@ async function getToken() {
 }
 
 async function clearToken() {
-  return new Promise(resolve => chrome.storage.local.remove(['accessToken', 'expiresAt', 'refreshToken'], resolve));
+  return new Promise(resolve => chrome.storage.local.remove(['accessToken', 'expiresAt', 'refreshToken', 'aiScanConsented'], resolve));
 }
 
 async function authenticate() {
@@ -62,12 +62,19 @@ async function getApiKey() {
   return new Promise(resolve => chrome.storage.session.get(['aiApiKey'], d => resolve(d.aiApiKey || null)));
 }
 
+const AI_CONSENT_VERSION = 1;
+
 async function hasAiConsent() {
-  return new Promise(resolve => chrome.storage.local.get(['aiScanConsented'], d => resolve(!!d.aiScanConsented)));
+  return new Promise(resolve => chrome.storage.local.get(['aiScanConsented'], d => {
+    const consent = d.aiScanConsented;
+    resolve(consent?.version === AI_CONSENT_VERSION);
+  }));
 }
 
 async function saveAiConsent() {
-  return new Promise(resolve => chrome.storage.local.set({ aiScanConsented: true }, resolve));
+  return new Promise(resolve => chrome.storage.local.set({
+    aiScanConsented: { version: AI_CONSENT_VERSION, timestamp: Date.now() },
+  }, resolve));
 }
 
 async function saveApiKey(key) {
@@ -220,7 +227,8 @@ function renderCandidates() {
     });
 
     const dot = document.createElement('span');
-    dot.className = `dot ${c.confidence}`;
+    const safeConfidence = ['high', 'medium', 'low'].includes(c.confidence) ? c.confidence : 'low';
+    dot.className = `dot ${safeConfidence}`;
 
     const text = document.createElement('span');
     text.className = 'candidate-text';
@@ -258,10 +266,12 @@ function applyProcessingState(state) {
     $('result-heading').textContent = 'Added to queue!';
     $('result-summary').textContent = '';
     const summary = document.createElement('span');
-    summary.innerHTML = `<strong>${state.foundCount}</strong> tracks queued<br><strong>${state.notFound.length}</strong> not found on Spotify`;
+    const foundCount = Number(state.foundCount) | 0;
+    const notFoundCount = Number(Array.isArray(state.notFound) ? state.notFound.length : 0) | 0;
+    summary.innerHTML = `<strong>${foundCount}</strong> tracks queued<br><strong>${notFoundCount}</strong> not found on Spotify`;
     $('result-summary').appendChild(summary);
 
-    if (state.notFound.length > 0) {
+    if (notFoundCount > 0) {
       show('not-found-section');
       const ul = $('not-found-list');
       ul.innerHTML = '';
@@ -405,14 +415,25 @@ async function init() {
   );
 
   if (stored.processingState?.status === 'running') {
-    showScreen('progress');
-    $('progress-title').textContent = 'Adding to queue…';
-    applyProcessingState(stored.processingState);
+    // Treat as stale if started more than 10 minutes ago (service worker was killed) (#21)
+    const staleThreshold = 10 * 60 * 1000;
+    if (stored.processingState.startedAt && Date.now() - stored.processingState.startedAt > staleThreshold) {
+      chrome.storage.local.remove('processingState');
+    } else {
+      showScreen('progress');
+      $('progress-title').textContent = 'Adding to queue…';
+      applyProcessingState(stored.processingState);
+    }
   } else if (stored.processingState?.status === 'done') {
     applyProcessingState(stored.processingState);
   } else if (stored.scanState?.candidates?.length > 0) {
     scanCandidates = stored.scanState.candidates;
-    selectedIndices = new Set(stored.scanState.selected || []);
+    // Bounds-check restored indices to prevent out-of-bounds access (#24)
+    selectedIndices = new Set(
+      (stored.scanState.selected || []).filter(i =>
+        Number.isInteger(i) && i >= 0 && i < stored.scanState.candidates.length
+      )
+    );
     lastResultContext = 'scan';
     showScreen('scan');
     const capped = stored.scanState.capped;

@@ -89,6 +89,7 @@ MV3 has a default CSP but no explicit `content_security_policy` is declared. Exp
 ## Critical
 
 ### 9. No guard against concurrent `authenticate()` or `processSongs()` calls
+- [x] **Fix**
 
 **File:** `background.js` message listener; `popup.js:362`
 
@@ -99,6 +100,7 @@ The connect button disables itself in the popup DOM, but the service worker's `o
 ---
 
 ### 10. `tabs.onUpdated` listener not scoped to auth window tab
+- [x] **Fix**
 
 **File:** `background.js` — OAuth flow
 
@@ -111,6 +113,7 @@ The `tabs.onUpdated` listener registered during OAuth checks only that `changeIn
 ## High (additional)
 
 ### 11. `PROCESS_SONGS` IPC payload not validated
+- [x] **Fix**
 
 **File:** `background.js:196`
 
@@ -127,6 +130,7 @@ for (const s of msg.songs) {
 ---
 
 ### 12. `innerHTML` used with storage-derived values on result screen
+- [x] **Fix**
 
 **File:** `popup.js:261`
 
@@ -141,6 +145,7 @@ summary.innerHTML = `<strong>${state.foundCount}</strong> tracks queued…`
 ---
 
 ### 13. Third-party API error strings surfaced verbatim to the user
+- [x] **Fix**
 
 **File:** `popup.js:273` → `handleError` → `$('result-summary').textContent`
 
@@ -151,6 +156,7 @@ Spotify API error messages (server-controlled strings) flow from `background.js`
 ---
 
 ### 14. `scanState.confidence` unvalidated when restored from storage
+- [x] **Fix**
 
 **File:** `popup.js:214`
 
@@ -167,6 +173,7 @@ dot.className = `dot ${c.confidence}`;
 ## Medium (additional)
 
 ### 15. PKCE verifier lost if service worker is terminated mid-auth
+- [x] **Fix**
 
 **File:** `background.js` — `authenticate()`
 
@@ -177,6 +184,7 @@ The PKCE `verifier` lives only in the closure of `authenticate()`. MV3 service w
 ---
 
 ### 16. AI consent flag cannot be revoked, and has no version
+- [x] **Fix**
 
 **File:** `popup.js` — `aiScanConsented`
 
@@ -187,6 +195,7 @@ The PKCE `verifier` lives only in the closure of `authenticate()`. MV3 service w
 ---
 
 ### 17. `tabs` permission exposes all open tab URLs
+- [ ] **Deferred** — `chrome.identity.launchWebAuthFlow` opens an unresizeable full Chrome window; keeping the manual popup approach (480×700) requires `tabs`. Revisit if UX requirements change.
 
 **File:** `manifest.json`
 
@@ -197,6 +206,7 @@ The `tabs` permission grants access to `url` and `title` for all open tabs — n
 ---
 
 ### 18. No handling for Spotify 429 rate limit responses
+- [x] **Fix**
 
 **File:** `background.js` — `spotifyFetch`, `processSongs`
 
@@ -207,6 +217,7 @@ HTTP 429 responses from Spotify are treated the same as any other error — the 
 ---
 
 ### 19. Missing `connect-src` in Content Security Policy
+- [x] **Fix**
 
 **File:** `manifest.json` — `content_security_policy`
 
@@ -220,6 +231,7 @@ The declared CSP restricts `script-src` and `object-src` but omits `connect-src`
 ---
 
 ### 20. `getPageTextForAI` captures hidden and off-screen DOM content
+- [x] **Fix**
 
 **File:** `extractor.js` — `getPageTextForAI`
 
@@ -232,6 +244,7 @@ The function strips `nav`, `footer`, `header`, `aside`, etc. but does not remove
 ## Low (additional)
 
 ### 21. Stuck `running` state if service worker is killed mid-processing
+- [x] **Fix**
 
 **File:** `background.js` / `popup.js:376`
 
@@ -242,6 +255,7 @@ If Chrome kills the service worker during `processSongs`, `processingState` rema
 ---
 
 ### 22. `expires_in` from token exchange not validated
+- [x] **Fix**
 
 **File:** `background.js:54` and `background.js:209`
 
@@ -252,6 +266,7 @@ If Chrome kills the service worker during `processSongs`, `processingState` rema
 ---
 
 ### 23. Stale tokens not cleared on refresh failure
+- [x] **Fix**
 
 **File:** `background.js` — `doRefreshToken`
 
@@ -262,6 +277,7 @@ When token refresh fails with a non-retryable error (e.g. 400 from Spotify, indi
 ---
 
 ### 24. Restored `scanState.selected` indices not bounds-checked
+- [x] **Fix**
 
 **File:** `popup.js:383`
 
@@ -279,6 +295,7 @@ selectedIndices = new Set(
 ---
 
 ### 25. `key` field should be removed before Chrome Web Store submission
+- [ ] **Fix** (defer until CWS submission)
 
 **File:** `manifest.json`
 

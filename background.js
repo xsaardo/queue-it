@@ -2,6 +2,9 @@
 
 const CLIENT_ID = 'dce75b7955954dfba134ab8cc3e98cb3';
 
+let authInProgress = false;
+let processingInProgress = false;
+
 function getRedirectUri() {
   return `https://${chrome.runtime.id}.chromiumapp.org/`;
 }
@@ -45,13 +48,22 @@ async function doRefreshToken() {
       client_id: CLIENT_ID,
     }),
   });
+  // 400 means the refresh token is revoked — clear stale credentials (#23)
+  if (res.status === 400) {
+    await chrome.storage.local.remove(['accessToken', 'expiresAt', 'refreshToken']);
+    return null;
+  }
   if (!res.ok) return null;
   const token = await res.json().catch(() => null);
   if (!token?.access_token) return null;
 
+  // Validate expires_in before use (#22)
+  const expiresIn = parseInt(token.expires_in, 10);
+  if (!Number.isFinite(expiresIn) || expiresIn <= 0) return null;
+
   await chrome.storage.local.set({
     accessToken: token.access_token,
-    expiresAt: Date.now() + token.expires_in * 1000,
+    expiresAt: Date.now() + expiresIn * 1000,
     ...(token.refresh_token ? { refreshToken: token.refresh_token } : {}),
   });
   return token.access_token;
@@ -63,7 +75,7 @@ async function getToken() {
 
 // ─── Spotify API ──────────────────────────────────────────────────────────────
 
-async function spotifyFetch(path, options = {}) {
+async function spotifyFetch(path, options = {}, retryCount = 0) {
   const token = await getToken();
   if (!token) throw new Error('not_authenticated');
   const res = await fetch(`https://api.spotify.com/v1${path}`, {
@@ -72,6 +84,12 @@ async function spotifyFetch(path, options = {}) {
   });
   if (res.status === 401) throw new Error('not_authenticated');
   if (res.status === 404 && path.includes('/player/queue')) throw new Error('No active Spotify device — open Spotify on a device first');
+  // Handle rate limiting with backoff (#18)
+  if (res.status === 429 && retryCount < 2) {
+    const retryAfter = Math.min(parseInt(res.headers.get('Retry-After') || '5', 10), 30);
+    await new Promise(r => setTimeout(r, retryAfter * 1000));
+    return spotifyFetch(path, options, retryCount + 1);
+  }
   if (res.status === 204) return null;
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -156,7 +174,7 @@ function setProcessingState(state) {
 
 async function processSongs(songs) {
   const total = songs.length;
-  await setProcessingState({ status: 'running', total, current: 0, currentLabel: 'Searching…', foundCount: 0, notFound: [] });
+  await setProcessingState({ status: 'running', startedAt: Date.now(), total, current: 0, currentLabel: 'Searching…', foundCount: 0, notFound: [] });
 
   const found = [];
   const notFound = [];
@@ -193,82 +211,100 @@ async function processSongs(songs) {
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 async function authenticate() {
-  const redirectUri = getRedirectUri();
-  const { verifier, challenge } = await generatePKCE();
+  if (authInProgress) throw new Error('Authentication already in progress');
+  authInProgress = true;
+  try {
+    const redirectUri = getRedirectUri();
+    const { verifier, challenge } = await generatePKCE();
 
-  const authUrl = new URL('https://accounts.spotify.com/authorize');
-  authUrl.searchParams.set('client_id', CLIENT_ID);
-  authUrl.searchParams.set('response_type', 'code');
-  authUrl.searchParams.set('redirect_uri', redirectUri);
-  authUrl.searchParams.set('scope', 'user-modify-playback-state');
-  authUrl.searchParams.set('code_challenge_method', 'S256');
-  authUrl.searchParams.set('code_challenge', challenge);
-  authUrl.searchParams.set('show_dialog', 'true');
+    // Persist verifier to session storage so it survives a service worker restart (#15)
+    await chrome.storage.session.set({ pkceVerifier: verifier });
 
-  return new Promise((resolve, reject) => {
-    let authWindowId = null;
+    const authUrl = new URL('https://accounts.spotify.com/authorize');
+    authUrl.searchParams.set('client_id', CLIENT_ID);
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('redirect_uri', redirectUri);
+    authUrl.searchParams.set('scope', 'user-modify-playback-state');
+    authUrl.searchParams.set('code_challenge_method', 'S256');
+    authUrl.searchParams.set('code_challenge', challenge);
+    authUrl.searchParams.set('show_dialog', 'true');
 
-    function cleanup() {
-      chrome.tabs.onUpdated.removeListener(onTabUpdated);
-      chrome.windows.onRemoved.removeListener(onWindowRemoved);
-      if (authWindowId !== null) {
-        chrome.windows.remove(authWindowId, () => void chrome.runtime.lastError);
-        authWindowId = null;
-      }
-    }
+    return await new Promise((resolve, reject) => {
+      let authWindowId = null;
 
-    function onWindowRemoved(windowId) {
-      if (windowId === authWindowId) {
+      function cleanup() {
         chrome.tabs.onUpdated.removeListener(onTabUpdated);
         chrome.windows.onRemoved.removeListener(onWindowRemoved);
-        authWindowId = null;
-        reject(new Error('Auth window was closed'));
+        chrome.storage.session.remove('pkceVerifier');
+        if (authWindowId !== null) {
+          chrome.windows.remove(authWindowId, () => void chrome.runtime.lastError);
+          authWindowId = null;
+        }
       }
-    }
 
-    async function onTabUpdated(tabId, changeInfo) {
-      if (!changeInfo.url?.startsWith(redirectUri)) return;
-      cleanup();
-      try {
-        const code = new URL(changeInfo.url).searchParams.get('code');
-        if (!code) throw new Error('No authorization code in response');
+      function onWindowRemoved(windowId) {
+        if (windowId === authWindowId) {
+          cleanup();
+          reject(new Error('Auth window was closed'));
+        }
+      }
 
-        const res = await fetch('https://accounts.spotify.com/api/token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({
-            grant_type: 'authorization_code',
-            code,
-            redirect_uri: redirectUri,
-            client_id: CLIENT_ID,
-            code_verifier: verifier,
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error_description || data.error || `Token exchange failed (${res.status})`);
+      async function onTabUpdated(tabId, changeInfo, tab) {
+        // Scope to the auth window's tab only — prevents a concurrent auth or
+        // unrelated navigation from consuming this listener (#10)
+        if (tab.windowId !== authWindowId) return;
+        if (!changeInfo.url?.startsWith(redirectUri)) return;
+        cleanup();
+        try {
+          const code = new URL(changeInfo.url).searchParams.get('code');
+          if (!code) throw new Error('No authorization code in response');
 
-        await chrome.storage.local.set({
-          accessToken: data.access_token,
-          expiresAt: Date.now() + parseInt(data.expires_in) * 1000,
-          refreshToken: data.refresh_token,
-        });
-        resolve();
-      } catch (e) { reject(e); }
-    }
+          // Read verifier from session storage in case service worker was restarted (#15)
+          const stored = await chrome.storage.session.get('pkceVerifier');
+          const codeVerifier = stored.pkceVerifier || verifier;
+          await chrome.storage.session.remove('pkceVerifier');
 
-    chrome.tabs.onUpdated.addListener(onTabUpdated);
-    chrome.windows.onRemoved.addListener(onWindowRemoved);
+          const res = await fetch('https://accounts.spotify.com/api/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              grant_type: 'authorization_code',
+              code,
+              redirect_uri: redirectUri,
+              client_id: CLIENT_ID,
+              code_verifier: codeVerifier,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error_description || data.error || `Token exchange failed (${res.status})`);
 
-    chrome.windows.create({
-      url: authUrl.toString(),
-      type: 'popup',
-      width: 480,
-      height: 700,
-      focused: true,
-    }, win => {
-      authWindowId = win.id;
+          // Validate expires_in before use (#22)
+          const expiresIn = parseInt(data.expires_in, 10);
+          if (!Number.isFinite(expiresIn) || expiresIn <= 0) throw new Error('Invalid token expiry from Spotify');
+
+          await chrome.storage.local.set({
+            accessToken: data.access_token,
+            expiresAt: Date.now() + expiresIn * 1000,
+            refreshToken: data.refresh_token,
+          });
+          resolve();
+        } catch (e) { reject(e); }
+      }
+
+      chrome.tabs.onUpdated.addListener(onTabUpdated);
+      chrome.windows.onRemoved.addListener(onWindowRemoved);
+
+      chrome.windows.create({
+        url: authUrl.toString(),
+        type: 'popup',
+        width: 480,
+        height: 700,
+        focused: true,
+      }, win => { authWindowId = win.id; });
     });
-  });
+  } finally {
+    authInProgress = false;
+  }
 }
 
 // ─── AI Provider config ────────────────────────────────────────────────────────
@@ -356,6 +392,12 @@ ${pageText.slice(0, 12000)}`;
 
 // ─── Message listener ─────────────────────────────────────────────────────────
 
+// Safe error messages that can be shown to the user (#13)
+const SAFE_PROCESSING_ERRORS = new Set([
+  'not_authenticated',
+  'No active Spotify device — open Spotify on a device first',
+]);
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'AUTHENTICATE') {
     authenticate()
@@ -365,8 +407,31 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === 'PROCESS_SONGS') {
+    // Guard against concurrent processing (#9)
+    if (processingInProgress) {
+      sendResponse({ ok: false, error: 'Already processing' });
+      return false;
+    }
+    // Validate payload before processing (#11)
+    if (!Array.isArray(msg.songs) || msg.songs.length > 200) {
+      sendResponse({ ok: false, error: 'Invalid songs payload' });
+      return false;
+    }
+    for (const s of msg.songs) {
+      if (typeof s?.title !== 'string' || typeof s?.artist !== 'string') {
+        sendResponse({ ok: false, error: 'Invalid song entry' });
+        return false;
+      }
+    }
+    processingInProgress = true;
     processSongs(msg.songs)
-      .catch(err => setProcessingState({ status: 'error', error: err.message }));
+      .catch(err => {
+        // Genericize third-party error strings before storing (#13)
+        const msg = SAFE_PROCESSING_ERRORS.has(err.message) ? err.message : 'Processing failed. Please try again.';
+        console.error('processSongs error:', err.message);
+        return setProcessingState({ status: 'error', error: msg });
+      })
+      .finally(() => { processingInProgress = false; });
     sendResponse({ ok: true }); // acknowledge immediately; progress via storage
     return false;
   }
