@@ -16,30 +16,6 @@ function showScreen(name) {
   show(`screen-${name}`);
 }
 
-// ─── Auth / Token ─────────────────────────────────────────────────────────────
-async function getToken() {
-  return new Promise(resolve => {
-    chrome.storage.local.get(['accessToken', 'expiresAt'], data => {
-      // Accept any stored token — background.js will refresh if expired on next use
-      resolve(data.accessToken || null);
-    });
-  });
-}
-
-async function clearToken() {
-  return new Promise(resolve => chrome.storage.local.remove(['accessToken', 'expiresAt', 'refreshToken', 'aiScanConsented'], resolve));
-}
-
-async function authenticate() {
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage({ type: 'AUTHENTICATE' }, response => {
-      if (chrome.runtime.lastError) { reject(new Error(chrome.runtime.lastError.message)); return; }
-      if (response?.ok) resolve();
-      else reject(new Error(response?.error || 'Authentication failed'));
-    });
-  });
-}
-
 // ─── AI Provider config ────────────────────────────────────────────────────────
 
 const AI_PROVIDERS = {
@@ -303,8 +279,7 @@ function applyProcessingState(state) {
 
 // ─── Error handler ─────────────────────────────────────────────────────────────
 function handleError(err) {
-  if (err.message === 'not_authenticated') {
-    clearToken();
+  if (err.message === 'no_spotify_tab') {
     showScreen('setup');
   } else {
     showScreen('result');
@@ -318,23 +293,12 @@ function handleError(err) {
 // ─── Init ─────────────────────────────────────────────────────────────────────
 async function init() {
   // Setup screen
-  $('connect-btn').addEventListener('click', async () => {
-    $('connect-btn').disabled = true;
-    $('connect-btn').textContent = 'Connecting…';
-    hide('auth-error');
-    try {
-      await authenticate();
-      showMain();
-    } catch (err) {
-      show('auth-error');
-      $('auth-error').textContent = err.message || 'Authentication failed. Please try again.';
-      $('connect-btn').disabled = false;
-      $('connect-btn').textContent = 'Connect to Spotify';
-    }
+  $('open-spotify-btn').addEventListener('click', () => {
+    chrome.tabs.create({ url: 'https://open.spotify.com' });
+    window.close();
   });
 
   // Main screen
-  $('disconnect-btn').addEventListener('click', async () => { await clearToken(); showScreen('setup'); });
   $('scan-btn').addEventListener('click', () => scanPage().catch(handleError));
 
   // AI Scan
@@ -423,7 +387,7 @@ async function init() {
 
   // Boot — check for in-progress or completed job from a previous popup open
   const stored = await new Promise(resolve =>
-    chrome.storage.local.get(['accessToken', 'processingState', 'scanState'], resolve)
+    chrome.storage.local.get(['processingState', 'scanState'], resolve)
   );
   const sessionData = await new Promise(resolve =>
     chrome.storage.session.get(['aiApiKey', 'pendingAiScan'], resolve)
@@ -449,7 +413,7 @@ async function init() {
     }
   } else if (stored.processingState?.status === 'done') {
     applyProcessingState(stored.processingState);
-  } else if (pendingAiScan?.selectionText && stored.accessToken) {
+  } else if (pendingAiScan?.selectionText) {
     // Context menu selection scan — takes priority over saved scan state
     showMain();
     aiScanPage(pendingAiScan.selectionText).catch(handleError);
@@ -470,10 +434,8 @@ async function init() {
     renderCandidates();
     if (capped) show('scan-cap-notice'); else hide('scan-cap-notice');
     show('scan-results');
-  } else if (stored.accessToken) {
-    showMain();
   } else {
-    showScreen('setup');
+    showMain();
   }
 }
 
