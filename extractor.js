@@ -204,7 +204,7 @@ function extractSongsFromPage() {
   });
 
   // ── 13. Generic text pattern matching (fallback) ─────────────────────────
-  const skipSelectors = 'nav, footer, header, aside, [role="navigation"], [role="banner"], script, style, noscript';
+  const skipSelectors = 'nav, footer, header, aside, [role="navigation"], [role="banner"], script, style, noscript, [aria-hidden="true"], template, [hidden]';
   const skipEls = new Set(document.querySelectorAll(skipSelectors));
 
   function isSkipped(el) {
@@ -257,7 +257,7 @@ function extractSongsFromPage() {
  * Returns cleaned main-content text for sending to an LLM.
  */
 function getPageTextForAI() {
-  const skip = 'nav, footer, header, aside, script, style, noscript, [role="navigation"], [role="banner"], [role="complementary"]';
+  const skip = 'nav, footer, header, aside, script, style, noscript, [role="navigation"], [role="banner"], [role="complementary"], [aria-hidden="true"], template, [hidden]';
   const clone = document.body.cloneNode(true);
   clone.querySelectorAll(skip).forEach(el => el.remove());
   const text = (clone.innerText || clone.textContent || '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
