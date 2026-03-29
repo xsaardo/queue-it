@@ -8,17 +8,16 @@
 </head>
 <body>
 
-  <!-- SETUP SCREEN -->
+  <!-- SETUP SCREEN (shown when no open.spotify.com tab is found) -->
   <div id="screen-setup" class="screen hidden">
     <div class="header">
       <span class="logo">🎵</span>
       <span class="title">QueueIt</span>
     </div>
     <div class="section">
-      <p class="hint">Scan any page for song mentions and add them straight to your Spotify queue. Connect your account to get started.</p>
+      <p class="hint">Open Spotify in a browser tab to get started. QueueIt reads your Spotify session directly — no login required.</p>
     </div>
-    <button id="connect-btn" class="btn btn-primary">Connect to Spotify</button>
-    <p id="auth-error" class="error hidden"></p>
+    <button id="open-spotify-btn" class="btn btn-primary">Open Spotify</button>
   </div>
 
   <!-- MAIN SCREEN -->
@@ -54,7 +53,6 @@
       </div>
       <p id="ai-key-status" class="hint hidden" style="margin-top:8px"><span id="ai-provider-label">AI</span> key saved · <button id="ai-key-clear-btn" class="btn-link">remove</button></p>
     </div>
-    <button id="disconnect-btn" class="btn btn-ghost">Disconnect Spotify</button>
   </div>
 
   <!-- SCAN SCREEN -->
