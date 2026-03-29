@@ -324,7 +324,7 @@ async function callOpenAICompat(apiKey, model, baseUrl, prompt) {
 }
 
 async function extractSongsWithAI(pageText) {
-  const data = await new Promise(resolve => chrome.storage.local.get(['aiApiKey'], resolve));
+  const data = await new Promise(resolve => chrome.storage.session.get(['aiApiKey'], resolve));
   const apiKey = data.aiApiKey;
   if (!apiKey) throw new Error('No API key saved');
 
