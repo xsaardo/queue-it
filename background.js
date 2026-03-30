@@ -9,43 +9,38 @@ async function findSpotifyTab() {
   return tabs[0] || null;
 }
 
-function extractSpotifyTokenFromPage() {
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key) continue;
-      let raw = localStorage.getItem(key);
-      if (!raw || !raw.includes('accessToken')) continue;
-      let parsed;
-      try { parsed = JSON.parse(raw); } catch { continue; }
-      if (typeof parsed === 'string') {
-        try { parsed = JSON.parse(parsed); } catch { continue; }
-      }
-      if (parsed && typeof parsed.accessToken === 'string' && parsed.accessToken.length > 20) {
-        return { accessToken: parsed.accessToken, expiresAt: parsed.expiresAt || null };
-      }
-    }
-  } catch (_) {}
-  return null;
-}
-
 async function getToken() {
   const tab = await findSpotifyTab();
   if (!tab) throw new Error('no_spotify_tab');
 
-  let result;
+  // Check for a token already captured by the content script
+  const stored = await chrome.storage.session.get('spotifyWebToken');
+  const cached = stored.spotifyWebToken;
+  if (cached?.token && Date.now() - cached.capturedAt < 55 * 60 * 1000) {
+    return cached.token;
+  }
+
+  // Tab was already open before the content script was registered — inject it now
+  // and wait up to 3s for Spotify to make a natural API call
   try {
-    [result] = await chrome.scripting.executeScript({
+    await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: extractSpotifyTokenFromPage,
+      files: ['content-main.js'],
+      world: 'MAIN',
     });
-  } catch { throw new Error('no_spotify_tab'); }
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ['content-bridge.js'],
+    });
+  } catch (_) {}
 
-  const data = result?.result;
-  if (!data?.accessToken) throw new Error('no_spotify_tab');
-  if (data.expiresAt && Date.now() >= data.expiresAt - 60_000) throw new Error('no_spotify_tab');
+  for (let i = 0; i < 6; i++) {
+    await new Promise(r => setTimeout(r, 500));
+    const retry = await chrome.storage.session.get('spotifyWebToken');
+    if (retry.spotifyWebToken?.token) return retry.spotifyWebToken.token;
+  }
 
-  return data.accessToken;
+  throw new Error('no_spotify_tab');
 }
 
 // ─── Spotify API ──────────────────────────────────────────────────────────────
