@@ -24,6 +24,17 @@ A Chrome extension that scans any webpage for songs and adds them to your Spotif
 
 For pages with unstructured content, use **AI Scan** — you'll be prompted to enter an API key the first time (stored in session storage, cleared when the extension closes).
 
+## Example Sites
+
+Works well on pages like:
+
+- [Metallica setlist — Ticketmaster Blog](https://blog.ticketmaster.com/metallica-setlist/)
+- [The 5 Best Songs of the Week — Stereogum](https://stereogum.com/2492073/the-5-best-songs-of-the-week-617/lists/the-5-best-songs-of-the-week)
+- [Vinylogue: Carl Craig — Discogs](https://www.discogs.com/digs/features/vinylogue-carl-craig/)
+- [Best Rap Songs of 2025 — Pitchfork](https://pitchfork.com/features/lists-and-guides/best-rap-songs-2025/)
+- [RA Features](https://ra.co/features/4493)
+- [Simple Plan setlists — Setlist.fm](https://www.setlist.fm/setlists/simple-plan-53d68fa9.html?page=2)
+
 ## AI Providers
 
 | Provider | Key required |
