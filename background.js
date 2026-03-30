@@ -1,57 +1,88 @@
 'use strict';
 
+const CLIENT_ID = 'dce75b7955954dfba134ab8cc3e98cb3';
+
+let authInProgress = false;
 let processingInProgress = false;
+
+function getRedirectUri() {
+  return `https://${chrome.runtime.id}.chromiumapp.org/`;
+}
+
+function base64urlEncode(buffer) {
+  return btoa(String.fromCharCode(...new Uint8Array(buffer)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function generatePKCE() {
+  const verifier = base64urlEncode(crypto.getRandomValues(new Uint8Array(32)));
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  const challenge = base64urlEncode(digest);
+  return { verifier, challenge };
+}
 
 // ─── Token management ─────────────────────────────────────────────────────────
 
-async function findSpotifyTab() {
-  const tabs = await chrome.tabs.query({ url: 'https://open.spotify.com/*' });
-  return tabs[0] || null;
+async function getStoredToken() {
+  return new Promise(resolve =>
+    chrome.storage.local.get(['accessToken', 'expiresAt'], data => {
+      if (data.accessToken && data.expiresAt && Date.now() < data.expiresAt - 60_000) {
+        resolve(data.accessToken);
+      } else {
+        resolve(null);
+      }
+    })
+  );
+}
+
+async function doRefreshToken() {
+  const data = await new Promise(resolve => chrome.storage.local.get(['refreshToken'], resolve));
+  if (!data.refreshToken) return null;
+
+  const res = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: data.refreshToken,
+      client_id: CLIENT_ID,
+    }),
+  });
+  // 400 means the refresh token is revoked — clear stale credentials (#23)
+  if (res.status === 400) {
+    await chrome.storage.local.remove(['accessToken', 'expiresAt', 'refreshToken']);
+    return null;
+  }
+  if (!res.ok) return null;
+  const token = await res.json().catch(() => null);
+  if (!token?.access_token) return null;
+
+  // Validate expires_in before use (#22)
+  const expiresIn = parseInt(token.expires_in, 10);
+  if (!Number.isFinite(expiresIn) || expiresIn <= 0) return null;
+
+  await chrome.storage.local.set({
+    accessToken: token.access_token,
+    expiresAt: Date.now() + expiresIn * 1000,
+    ...(token.refresh_token ? { refreshToken: token.refresh_token } : {}),
+  });
+  return token.access_token;
 }
 
 async function getToken() {
-  const tab = await findSpotifyTab();
-  if (!tab) throw new Error('no_spotify_tab');
-
-  // Check for a token already captured by the content script
-  const stored = await chrome.storage.session.get('spotifyWebToken');
-  const cached = stored.spotifyWebToken;
-  if (cached?.token && Date.now() - cached.capturedAt < 55 * 60 * 1000) {
-    return cached.token;
-  }
-
-  // Tab was already open before the content script was registered — inject it now
-  // and wait up to 3s for Spotify to make a natural API call
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ['content-main.js'],
-      world: 'MAIN',
-    });
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ['content-bridge.js'],
-    });
-  } catch (_) {}
-
-  for (let i = 0; i < 6; i++) {
-    await new Promise(r => setTimeout(r, 500));
-    const retry = await chrome.storage.session.get('spotifyWebToken');
-    if (retry.spotifyWebToken?.token) return retry.spotifyWebToken.token;
-  }
-
-  throw new Error('no_spotify_tab');
+  return (await getStoredToken()) || (await doRefreshToken());
 }
 
 // ─── Spotify API ──────────────────────────────────────────────────────────────
 
 async function spotifyFetch(path, options = {}, retryCount = 0) {
   const token = await getToken();
+  if (!token) throw new Error('not_authenticated');
   const res = await fetch(`https://api.spotify.com/v1${path}`, {
     ...options,
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(options.headers || {}) },
   });
-  if (res.status === 401) throw new Error('no_spotify_tab');
+  if (res.status === 401) throw new Error('not_authenticated');
   if (res.status === 404 && path.includes('/player/queue')) throw new Error('No active Spotify device — open Spotify on a device first');
   // Handle rate limiting with backoff (#18)
   if (res.status === 429 && retryCount < 2) {
@@ -121,11 +152,12 @@ async function searchTrack(artist, title) {
 
 async function addToQueue(uri) {
   const token = await getToken();
+  if (!token) throw new Error('not_authenticated');
   const res = await fetch(`https://api.spotify.com/v1/me/player/queue?uri=${encodeURIComponent(uri)}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
   });
-  if (res.status === 401) throw new Error('no_spotify_tab');
+  if (res.status === 401) throw new Error('not_authenticated');
   if (res.status === 404) throw new Error('No active Spotify device — open Spotify on a device first');
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -174,6 +206,105 @@ async function processSongs(songs) {
   setTimeout(() => chrome.action.setBadgeText({ text: '' }), 5000);
 
   await setProcessingState({ status: 'done', total, foundCount: found.length, notFound });
+}
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+async function authenticate() {
+  if (authInProgress) throw new Error('Authentication already in progress');
+  authInProgress = true;
+  try {
+    const redirectUri = getRedirectUri();
+    const { verifier, challenge } = await generatePKCE();
+
+    // Persist verifier to session storage so it survives a service worker restart (#15)
+    await chrome.storage.session.set({ pkceVerifier: verifier });
+
+    const authUrl = new URL('https://accounts.spotify.com/authorize');
+    authUrl.searchParams.set('client_id', CLIENT_ID);
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('redirect_uri', redirectUri);
+    authUrl.searchParams.set('scope', 'user-modify-playback-state');
+    authUrl.searchParams.set('code_challenge_method', 'S256');
+    authUrl.searchParams.set('code_challenge', challenge);
+    authUrl.searchParams.set('show_dialog', 'true');
+
+    return await new Promise((resolve, reject) => {
+      let authWindowId = null;
+
+      function cleanup() {
+        chrome.tabs.onUpdated.removeListener(onTabUpdated);
+        chrome.windows.onRemoved.removeListener(onWindowRemoved);
+        chrome.storage.session.remove('pkceVerifier');
+        if (authWindowId !== null) {
+          chrome.windows.remove(authWindowId, () => void chrome.runtime.lastError);
+          authWindowId = null;
+        }
+      }
+
+      function onWindowRemoved(windowId) {
+        if (windowId === authWindowId) {
+          cleanup();
+          reject(new Error('Auth window was closed'));
+        }
+      }
+
+      async function onTabUpdated(tabId, changeInfo, tab) {
+        // Scope to the auth window's tab only — prevents a concurrent auth or
+        // unrelated navigation from consuming this listener (#10)
+        if (tab.windowId !== authWindowId) return;
+        if (!changeInfo.url?.startsWith(redirectUri)) return;
+        cleanup();
+        try {
+          const code = new URL(changeInfo.url).searchParams.get('code');
+          if (!code) throw new Error('No authorization code in response');
+
+          // Read verifier from session storage in case service worker was restarted (#15)
+          const stored = await chrome.storage.session.get('pkceVerifier');
+          const codeVerifier = stored.pkceVerifier || verifier;
+          await chrome.storage.session.remove('pkceVerifier');
+
+          const res = await fetch('https://accounts.spotify.com/api/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              grant_type: 'authorization_code',
+              code,
+              redirect_uri: redirectUri,
+              client_id: CLIENT_ID,
+              code_verifier: codeVerifier,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error_description || data.error || `Token exchange failed (${res.status})`);
+
+          // Validate expires_in before use (#22)
+          const expiresIn = parseInt(data.expires_in, 10);
+          if (!Number.isFinite(expiresIn) || expiresIn <= 0) throw new Error('Invalid token expiry from Spotify');
+
+          await chrome.storage.local.set({
+            accessToken: data.access_token,
+            expiresAt: Date.now() + expiresIn * 1000,
+            refreshToken: data.refresh_token,
+          });
+          resolve();
+        } catch (e) { reject(e); }
+      }
+
+      chrome.tabs.onUpdated.addListener(onTabUpdated);
+      chrome.windows.onRemoved.addListener(onWindowRemoved);
+
+      chrome.windows.create({
+        url: authUrl.toString(),
+        type: 'popup',
+        width: 480,
+        height: 700,
+        focused: true,
+      }, win => { authWindowId = win.id; });
+    });
+  } finally {
+    authInProgress = false;
+  }
 }
 
 // ─── AI Provider config ────────────────────────────────────────────────────────
@@ -263,7 +394,7 @@ ${pageText.slice(0, 12000)}`;
 
 // Safe error messages that can be shown to the user (#13)
 const SAFE_PROCESSING_ERRORS = new Set([
-  'no_spotify_tab',
+  'not_authenticated',
   'No active Spotify device — open Spotify on a device first',
 ]);
 
@@ -301,6 +432,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === 'AUTHENTICATE') {
+    authenticate()
+      .then(() => sendResponse({ ok: true }))
+      .catch(err => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
   if (msg.type === 'PROCESS_SONGS') {
     // Guard against concurrent processing (#9)
     if (processingInProgress) {
