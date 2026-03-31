@@ -142,9 +142,11 @@ function isGoodMatch(song, track) {
 }
 
 async function searchTrack(artist, title) {
-  const strict = encodeURIComponent(`artist:${artist} track:${title}`);
-  const d1 = await spotifyFetch(`/search?q=${strict}&type=track&limit=1`);
-  if (d1?.tracks?.items?.length) return d1.tracks.items[0];
+  if (artist) {
+    const strict = encodeURIComponent(`artist:${artist} track:${title}`);
+    const d1 = await spotifyFetch(`/search?q=${strict}&type=track&limit=1`);
+    if (d1?.tracks?.items?.length) return d1.tracks.items[0];
+  }
   const loose = encodeURIComponent(artist ? `${artist} ${title}` : title);
   const d2 = await spotifyFetch(`/search?q=${loose}&type=track&limit=1`);
   return d2?.tracks?.items?.[0] || null;
@@ -188,7 +190,10 @@ async function processSongs(songs) {
       const track = await searchTrack(song.artist, song.title);
       if (track && isGoodMatch(song, track)) found.push({ song, uri: track.uri });
       else notFound.push(song);
-    } catch { notFound.push(song); }
+    } catch (err) {
+      if (err.message === 'not_authenticated') throw err;
+      notFound.push(song);
+    }
 
     await new Promise(r => setTimeout(r, 120));
   }
