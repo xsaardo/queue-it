@@ -269,6 +269,20 @@ function applyProcessingState(state) {
     $('progress-count').textContent = `${state.current} / ${state.total}`;
     $('progress-current').textContent = state.currentLabel || 'Searching…';
 
+  } else if (state.status === 'cancelled') {
+    lastResultContext = 'scan';
+    showScreen('result');
+    $('result-heading').textContent = 'Cancelled';
+    $('result-summary').textContent = '';
+    const summary = document.createElement('span');
+    const queued = Number(state.foundCount) | 0;
+    summary.innerHTML = queued > 0
+      ? `<strong>${queued}</strong> tracks queued before cancellation`
+      : `No tracks were queued`;
+    $('result-summary').appendChild(summary);
+    hide('not-found-section');
+    chrome.storage.local.remove('processingState');
+
   } else if (state.status === 'done') {
     lastResultContext = 'scan';
     showScreen('result');
@@ -400,6 +414,11 @@ async function init() {
     $('progress-count').textContent = `0 / ${songs.length}`;
     $('progress-current').textContent = 'Searching…';
     chrome.runtime.sendMessage({ type: 'PROCESS_SONGS', songs });
+  });
+
+  // Progress screen
+  $('cancel-btn').addEventListener('click', () => {
+    chrome.runtime.sendMessage({ type: 'CANCEL_PROCESSING' });
   });
 
   // Result screen

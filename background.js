@@ -4,6 +4,7 @@ const CLIENT_ID = 'dce75b7955954dfba134ab8cc3e98cb3';
 
 let authInProgress = false;
 let processingInProgress = false;
+let cancelRequested = false;
 
 function getRedirectUri() {
   return `https://${chrome.runtime.id}.chromiumapp.org/`;
@@ -175,6 +176,7 @@ function setProcessingState(state) {
 }
 
 async function processSongs(songs) {
+  cancelRequested = false;
   const total = songs.length;
   await setProcessingState({ status: 'running', startedAt: Date.now(), total, current: 0, currentLabel: 'Searching…', foundCount: 0, notFound: [] });
 
@@ -182,6 +184,10 @@ async function processSongs(songs) {
   const notFound = [];
 
   for (let i = 0; i < songs.length; i++) {
+    if (cancelRequested) {
+      await setProcessingState({ status: 'cancelled', foundCount: 0, notFound: [] });
+      return;
+    }
     const song = songs[i];
     const label = song.artist ? `${song.artist} – ${song.title}` : song.title;
     await setProcessingState({ status: 'running', total, current: i, currentLabel: label, foundCount: found.length, notFoundCount: notFound.length });
@@ -198,10 +204,21 @@ async function processSongs(songs) {
     await new Promise(r => setTimeout(r, 120));
   }
 
+  if (cancelRequested) {
+    await setProcessingState({ status: 'cancelled', foundCount: 0, notFound: [] });
+    return;
+  }
+
   await setProcessingState({ status: 'running', total, current: total, currentLabel: `Queueing ${found.length} tracks…`, foundCount: found.length, notFoundCount: notFound.length });
 
+  let queued = 0;
   for (const f of found) {
+    if (cancelRequested) {
+      await setProcessingState({ status: 'cancelled', foundCount: queued, notFound: [] });
+      return;
+    }
     await addToQueue(f.uri);
+    queued++;
     await new Promise(r => setTimeout(r, 150));
   }
 
@@ -471,6 +488,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       })
       .finally(() => { processingInProgress = false; });
     sendResponse({ ok: true }); // acknowledge immediately; progress via storage
+    return false;
+  }
+
+  if (msg.type === 'CANCEL_PROCESSING') {
+    cancelRequested = true;
+    sendResponse({ ok: true });
     return false;
   }
 
