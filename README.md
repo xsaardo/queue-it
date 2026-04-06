@@ -16,6 +16,38 @@ A Chrome extension that scans any webpage for songs and adds them to your Spotif
 3. Click **Load unpacked** and select the `queue-it/` directory
 4. Click the QueueIt icon in your toolbar and connect your Spotify account
 
+## Self-Hosting with Your Own Spotify App
+
+Spotify restricts apps in development mode to 25 users. To use QueueIt beyond that limit, create your own Spotify app and plug in your own client ID. This takes about 5 minutes.
+
+**Step 1 — Find your extension ID**
+
+After loading the extension, copy the ID shown under the extension name in `chrome://extensions/` — it looks like `abcdefghijklmnopabcdefghijklmnop`.
+
+> The `key` field in `manifest.json` locks the extension ID so it stays the same every time you load it, on any machine. Leave that field as-is.
+
+**Step 2 — Create a Spotify app**
+
+1. Go to [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) and log in
+2. Click **Create app** and fill in the form:
+   - **Redirect URI**: `https://YOUR_EXTENSION_ID.chromiumapp.org/` (use the ID from Step 1)
+   - **Which API/SDKs are you planning to use?**: check **Web API**
+3. Click **Settings** on the app page and copy your **Client ID**
+
+**Step 3 — Update the client ID**
+
+Open `background.js` and replace line 3:
+
+```js
+const CLIENT_ID = 'your_client_id_here';
+```
+
+**Step 4 — Reload the extension**
+
+Click the refresh icon on the QueueIt card in `chrome://extensions/`. Done.
+
+> If you need more than 25 users, apply for a [Spotify quota extension](https://developer.spotify.com/documentation/web-api/concepts/quota-modes).
+
 ## Usage
 
 1. Navigate to any page with songs (music blog, review, Reddit thread, setlist, etc.)
