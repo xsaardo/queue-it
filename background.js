@@ -153,6 +153,20 @@ async function searchTrack(artist, title) {
   return d2?.tracks?.items?.[0] || null;
 }
 
+async function checkActiveDevice() {
+  const token = await getToken();
+  if (!token) throw new Error('not_authenticated');
+  const res = await fetch('https://api.spotify.com/v1/me/player', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 401) throw new Error('not_authenticated');
+  if (res.status === 204 || res.status === 404) throw new Error('No active Spotify device — open Spotify on a device first');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `HTTP ${res.status}`);
+  }
+}
+
 async function addToQueue(uri) {
   const token = await getToken();
   if (!token) throw new Error('not_authenticated');
@@ -177,6 +191,7 @@ function setProcessingState(state) {
 
 async function processSongs(songs) {
   cancelRequested = false;
+  await checkActiveDevice();
   const total = songs.length;
   await setProcessingState({ status: 'running', startedAt: Date.now(), total, current: 0, currentLabel: 'Searching…', foundCount: 0, notFound: [] });
 
