@@ -6,6 +6,7 @@ A Chrome extension that scans any webpage for songs and adds them to your Spotif
 
 - **Smart extraction** — 13 detection strategies: JSON-LD/Schema.org, YouTube metadata, Bandcamp, SoundCloud, Pitchfork, Resident Advisor, RateYourMusic, Reddit (r/listentothis, r/Music), Last.fm, Setlist.fm, Apple Music, Spotify Web, and generic text patterns
 - **AI-enhanced scanning** — optionally use Claude, OpenAI, GPT, Gemini, or OpenRouter for harder-to-parse pages
+- **Context menu** — highlight any text, right-click, and choose **AI Scan with QueueIt** to scan just that selection
 - **Spotify integration** — OAuth 2.0 with PKCE, auto-search, and queue addition via the Spotify Web API
 - **Privacy-first** — page content is never stored; AI scans only send content when you explicitly initiate them
 
