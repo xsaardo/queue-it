@@ -66,6 +66,7 @@ Works well on pages like:
 - [Best Rap Songs of 2025 — Pitchfork](https://pitchfork.com/features/lists-and-guides/best-rap-songs-2025/)
 - [RA Features](https://ra.co/features/4493)
 - [Simple Plan setlists — Setlist.fm](https://www.setlist.fm/setlists/simple-plan-53d68fa9.html?page=2)
+- [r/electronicmusic — Reddit](https://www.reddit.com/r/electronicmusic/)
 
 ## AI Providers
 
