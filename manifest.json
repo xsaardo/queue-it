@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "QueueIt",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Spotify integration — scan any page for songs, add to queue or playlist.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkHN0MelZifIPxYCfXtylPY/7Ow8Aydyby4tRZDAH9oZMGO3oZmE6I/5DMYN1NmxFOuPiFXcwy4Zm8E4NLetuVu+EJnGv8v1Brf2U5HEm9kjQjeaGJFv6nr6h1BeOFsvprHsVZUmEF/r/jSokAXqXISoUGwILSyVvz/xs+2vN6gudtcMbyKQ6Fr2eHhlkxsrT3z2DInqS/wzHQLPtg/cv01pNJhcha75X6eCCwBzYpqzODv0sGgi0YX65ZGYIIIOBJF9kIgdRap+toOODQ6gIyPwHO/fDFTdMvu7nC6/7g33XMUX5vfwfJzjZYsZO4I7mSAXz7Zg297e3GpcwRxrI5QIDAQAB",
   "permissions": ["storage", "scripting", "activeTab", "tabs", "contextMenus"],
