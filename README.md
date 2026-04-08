@@ -56,6 +56,8 @@ Click the refresh icon on the QueueIt card in `chrome://extensions/`. Done.
 
 For pages with unstructured content, use **AI Scan** — you'll be prompted to enter an API key the first time (stored in session storage, cleared when the extension closes).
 
+You can also highlight any text on a page, right-click, and choose **AI Scan with QueueIt** to scan just that selection without opening the full popup first.
+
 ## Example Sites
 
 Works well on pages like:
