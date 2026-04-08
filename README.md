@@ -1,5 +1,7 @@
 # QueueIt
 
+<img src="icons/icon128.png" alt="QueueIt" width="80" />
+
 A Chrome extension that scans any webpage for songs and adds them to your Spotify queue — no copy-pasting, no tab-switching.
 
 ## Features
