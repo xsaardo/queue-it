@@ -6,7 +6,7 @@ A Chrome extension that scans any webpage for songs and adds them to your Spotif
 
 - **Smart extraction** — 13 detection strategies: JSON-LD/Schema.org, YouTube metadata, Bandcamp, SoundCloud, Pitchfork, Resident Advisor, RateYourMusic, Reddit (r/listentothis, r/Music), Last.fm, Setlist.fm, Apple Music, Spotify Web, and generic text patterns
 - **AI-enhanced scanning** — optionally use Claude, OpenAI, GPT, Gemini, or OpenRouter for harder-to-parse pages
-- **Context menu** — highlight any text, right-click, and choose **AI Scan with QueueIt** to scan just that selection
+- **Context menu** — highlight any text, right-click, and choose **AI Scan with QueueIt** to scan just that selection, or **Add to Queue with QueueIt** to parse it locally (no AI, no API key) and queue it right away
 - **Spotify integration** — OAuth 2.0 with PKCE, auto-search, and queue addition via the Spotify Web API
 - **Privacy-first** — page content is never stored; AI scans only send content when you explicitly initiate them
 
@@ -58,6 +58,8 @@ Click the refresh icon on the QueueIt card in `chrome://extensions/`. Done.
 For pages with unstructured content, use **AI Scan** — you'll be prompted to enter an API key the first time (stored in session storage, cleared when the extension closes).
 
 You can also highlight any text on a page, right-click, and choose **AI Scan with QueueIt** to scan just that selection without opening the full popup first.
+
+For a highlighted song/artist pair in a clean format — `Artist - Title`, `Artist – Title`, or `Title by Artist` — right-click and choose **Add to Queue with QueueIt** instead. It's parsed locally with no AI call and no API key: a single confident match is queued immediately, a selection with several matches opens the usual review screen, and text with no recognizable pattern shows a "No song detected" message.
 
 ## Example Sites
 
