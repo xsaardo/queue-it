@@ -194,6 +194,44 @@ async function aiScanPage(textOverride = null) {
   doAiScan(textOverride).catch(handleError);
 }
 
+function startProcessing(songs) {
+  showScreen('progress');
+  $('progress-title').textContent = 'Adding to queue…';
+  $('progress-bar').style.width = '0%';
+  $('progress-count').textContent = `0 / ${songs.length}`;
+  $('progress-current').textContent = 'Searching…';
+  chrome.runtime.sendMessage({ type: 'PROCESS_SONGS', songs }, response => {
+    if (chrome.runtime.lastError) return; // popup closed before the ack arrived; background still runs
+    if (response && response.ok === false) handleError(new Error(response.error || 'Could not start processing'));
+  });
+}
+
+// ─── Quick Queue (non-AI selection parsing, from context menu) ────────────────
+function handleQuickQueue(candidates) {
+  // Skip the review screen only for a single, confident match — a lone
+  // low-confidence (plain-hyphen) match still goes through review, same as
+  // any low-confidence candidate from a full page scan.
+  if (candidates.length === 1 && candidates[0].confidence !== 'low') {
+    startProcessing(candidates);
+    return;
+  }
+
+  lastResultContext = 'scan';
+  showScreen('scan');
+  hide('scan-loading');
+  hide('scan-results');
+  hide('scan-empty');
+
+  if (candidates.length === 0) {
+    $('scan-heading').textContent = 'No song detected';
+    $('scan-empty-msg').textContent = 'Try highlighting text like "Artist - Title."';
+    hide('scan-empty-hint');
+    show('scan-empty');
+  } else {
+    showScanResults(candidates);
+  }
+}
+
 function showScanResults(candidates) {
   if (candidates.length === 0) {
     $('scan-heading').textContent = 'No songs found';
@@ -203,9 +241,10 @@ function showScanResults(candidates) {
 
   const capped = candidates.length >= 200;
   scanCandidates = candidates;
-  // Pre-select all except low-confidence hyphen matches
+  // Pre-select all except low-confidence matches (the weak plain-hyphen heuristic,
+  // from either the page-scan 'hyphen' source or the quick-queue selection parser)
   selectedIndices = new Set(
-    candidates.map((c, i) => (c.source !== 'hyphen' ? i : null)).filter(i => i !== null)
+    candidates.map((c, i) => (c.confidence !== 'low' ? i : null)).filter(i => i !== null)
   );
 
   const label = capped ? '200+ songs found' : `${candidates.length} song${candidates.length !== 1 ? 's' : ''} found`;
@@ -408,12 +447,7 @@ async function init() {
 
   $('scan-queue-btn').addEventListener('click', () => {
     const songs = [...selectedIndices].map(i => scanCandidates[i]);
-    showScreen('progress');
-    $('progress-title').textContent = 'Adding to queue…';
-    $('progress-bar').style.width = '0%';
-    $('progress-count').textContent = `0 / ${songs.length}`;
-    $('progress-current').textContent = 'Searching…';
-    chrome.runtime.sendMessage({ type: 'PROCESS_SONGS', songs });
+    startProcessing(songs);
   });
 
   // Progress screen
@@ -438,6 +472,12 @@ async function init() {
       chrome.storage.session.remove('pendingAiScan');
       if (selectionText) aiScanPage(selectionText).catch(handleError);
     }
+    // Pick up context-menu Quick Queue selections while popup is already open
+    if (area === 'session' && changes.pendingQuickQueue?.newValue) {
+      const { candidates } = changes.pendingQuickQueue.newValue;
+      chrome.storage.session.remove('pendingQuickQueue');
+      handleQuickQueue(candidates || []);
+    }
   });
 
   // Boot — check for in-progress or completed job from a previous popup open
@@ -445,10 +485,12 @@ async function init() {
     chrome.storage.local.get(['accessToken', 'processingState', 'scanState'], resolve)
   );
   const sessionData = await new Promise(resolve =>
-    chrome.storage.session.get(['aiApiKey', 'pendingAiScan'], resolve)
+    chrome.storage.session.get(['aiApiKey', 'pendingAiScan', 'pendingQuickQueue'], resolve)
   );
   const pendingAiScan = sessionData.pendingAiScan || null;
   if (pendingAiScan) chrome.storage.session.remove('pendingAiScan');
+  const pendingQuickQueue = sessionData.pendingQuickQueue || null;
+  if (pendingQuickQueue) chrome.storage.session.remove('pendingQuickQueue');
   const existingKey = sessionData.aiApiKey || null;
   if (existingKey) {
     const provider = detectProvider(existingKey);
@@ -472,6 +514,10 @@ async function init() {
     // Context menu selection scan — takes priority over saved scan state
     showMain();
     aiScanPage(pendingAiScan.selectionText).catch(handleError);
+  } else if (pendingQuickQueue && stored.accessToken) {
+    // Context menu Quick Queue (non-AI) selection — takes priority over saved scan state
+    showMain();
+    handleQuickQueue(pendingQuickQueue.candidates || []);
   } else if (stored.scanState?.candidates?.length > 0) {
     scanCandidates = stored.scanState.candidates;
     // Bounds-check restored indices to prevent out-of-bounds access (#24)

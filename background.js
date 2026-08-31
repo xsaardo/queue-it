@@ -435,6 +435,67 @@ const SAFE_PROCESSING_ERRORS = new Set([
   'No active Spotify device — open Spotify on a device first',
 ]);
 
+// ─── Non-AI local parsing (selection → song candidates) ────────────────────────
+//
+// Same three heuristics as the "Generic text pattern matching" fallback tier
+// in extractor.js's extractSongsFromPage (em dash, "by"-pattern, hyphen), but
+// applied to a plain selection string instead of DOM elements — this file has
+// no DOM access and doesn't load extractor.js. Keep these patterns in sync
+// with extractor.js if tuned.
+//
+// Unlike the page-scan tier (whose matches always land on a review screen),
+// a single match here can be queued with NO review step at all (see
+// handleQuickQueue in popup.js), so every branch — not just hyphen — applies
+// the "doesn't look like a sentence" guard, and known-noise lines (URLs,
+// copyright/legal boilerplate) are rejected up front.
+
+function parseQuickQueueSelection(text) {
+  const results = [];
+  const seen = new Set();
+
+  function clean(s) {
+    return (s || '').replace(/\s+/g, ' ').replace(/[""'']/g, '"').trim();
+  }
+
+  function add(artist, title, confidence) {
+    artist = clean(artist);
+    title = clean(title);
+    if (!title || title.length < 2 || title.length > 150) return;
+    if (artist && artist.length > 100) return;
+    const key = `${artist.toLowerCase()}::${title.toLowerCase()}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    results.push({ artist, title, confidence, source: 'quick-queue' });
+  }
+
+  // Rejects sentence-like text: an artist name doesn't end in sentence
+  // punctuation or run past a handful of words.
+  function looksLikeAnArtist(s) {
+    return !/[.?!]/.test(s) && s.trim().split(/\s+/).length <= 7;
+  }
+
+  const emDashRe = /^(.{1,70}?)\s[–—]\s(.{1,120})$/;
+  const hyphenRe = /^(.{2,60}?)\s-\s(.{2,120})$/;
+  const byRe = /^[""']?(.{1,80}?)[""']?\s+by\s+(.{1,60})$/i;
+  const noiseRe = /^(https?:\/\/|www\.|©|\d{4}\s*[-–]|all rights|terms|privacy|cookie|subscribe|follow|share|comments?|reply|like|loading)/i;
+
+  (text || '').split('\n').forEach(line => {
+    const t = line.trim().replace(/\s+/g, ' ');
+    if (t.length < 3 || t.length > 200 || noiseRe.test(t)) return;
+
+    let m;
+    if ((m = t.match(emDashRe))) {
+      if (looksLikeAnArtist(m[1])) add(m[1], m[2], 'medium');
+    } else if ((m = t.match(byRe))) {
+      if (looksLikeAnArtist(m[2])) add(m[2], m[1], 'medium');
+    } else if ((m = t.match(hyphenRe))) {
+      if (looksLikeAnArtist(m[1])) add(m[1], m[2], 'low');
+    }
+  });
+
+  return results.slice(0, 50);
+}
+
 // ─── Context menu ─────────────────────────────────────────────────────────────
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -443,29 +504,46 @@ chrome.runtime.onInstalled.addListener(() => {
     title: 'AI Scan with QueueIt',
     contexts: ['selection'],
   });
+  chrome.contextMenus.create({
+    id: 'quick-queue-selection',
+    title: 'Add to Queue with QueueIt',
+    contexts: ['selection'],
+  });
 });
 
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId !== 'ai-scan-selection') return;
-
+async function getSelectionText(tab, info) {
   // Inject to get full selection (info.selectionText is truncated by Chrome)
-  let selectionText = '';
   try {
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: () => window.getSelection().toString().trim().slice(0, 15000),
     });
-    selectionText = result?.result || info.selectionText || '';
+    return result?.result || info.selectionText || '';
   } catch {
-    selectionText = info.selectionText || '';
+    return info.selectionText || '';
+  }
+}
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId === 'ai-scan-selection') {
+    const selectionText = await getSelectionText(tab, info);
+    if (!selectionText) return;
+
+    await chrome.storage.session.set({ pendingAiScan: { selectionText } });
+
+    // Open popup (Chrome 127+; graceful no-op on older builds)
+    try { await chrome.action.openPopup(); } catch { /* user can open manually */ }
+    return;
   }
 
-  if (!selectionText) return;
+  if (info.menuItemId === 'quick-queue-selection') {
+    const selectionText = await getSelectionText(tab, info);
+    const candidates = selectionText ? parseQuickQueueSelection(selectionText) : [];
 
-  await chrome.storage.session.set({ pendingAiScan: { selectionText } });
+    await chrome.storage.session.set({ pendingQuickQueue: { candidates } });
 
-  // Open popup (Chrome 127+; graceful no-op on older builds)
-  try { await chrome.action.openPopup(); } catch { /* user can open manually */ }
+    try { await chrome.action.openPopup(); } catch { /* user can open manually */ }
+  }
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
