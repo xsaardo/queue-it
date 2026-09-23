@@ -99,8 +99,13 @@ async function spotifyFetch(path, options = {}, retryCount = 0) {
   return res.json().catch(() => null);
 }
 
+// "Brujería" -> "Brujeria": Spotify often lists artists without diacritics.
+function stripDiacritics(str) {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
 function normalizeStr(str) {
-  return str
+  return stripDiacritics(str)
     .toLowerCase()
     .replace(/\s*[\(\[].*?[\)\]]\s*/g, ' ')  // strip (feat. X), [Remix], etc.
     .replace(/\bfeat\.?\s.*/i, '')            // strip "feat ..." not caught above
@@ -143,6 +148,8 @@ function isGoodMatch(song, track) {
 }
 
 async function searchTrack(artist, title) {
+  artist = artist && stripDiacritics(artist);
+  title = stripDiacritics(title);
   if (artist) {
     const strict = encodeURIComponent(`artist:${artist} track:${title}`);
     const d1 = await spotifyFetch(`/search?q=${strict}&type=track&limit=1`);

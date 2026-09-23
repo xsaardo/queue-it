@@ -241,10 +241,9 @@ function showScanResults(candidates) {
 
   const capped = candidates.length >= 200;
   scanCandidates = candidates;
-  // Pre-select all except low-confidence matches (the weak plain-hyphen heuristic,
-  // from either the page-scan 'hyphen' source or the quick-queue selection parser)
+  // Pre-select only high-confidence matches; medium and low stay unchecked
   selectedIndices = new Set(
-    candidates.map((c, i) => (c.confidence !== 'low' ? i : null)).filter(i => i !== null)
+    candidates.map((c, i) => (c.confidence === 'high' ? i : null)).filter(i => i !== null)
   );
 
   const label = capped ? '200+ songs found' : `${candidates.length} song${candidates.length !== 1 ? 's' : ''} found`;
